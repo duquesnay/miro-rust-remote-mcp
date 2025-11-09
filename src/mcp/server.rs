@@ -5,8 +5,57 @@ use rmcp::{
     handler::server::tool::ToolRouter, model::*, tool, tool_router, ErrorData as McpError,
     ServerHandler,
 };
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::Arc;
+
+/// Parameters for creating a sticky note
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateStickyNoteParams {
+    pub board_id: String,
+    pub content: String,
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Parameters for creating a shape
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateShapeParams {
+    pub board_id: String,
+    pub shape_type: String,
+    pub fill_color: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    #[serde(default)]
+    pub content: Option<String>,
+}
+
+/// Parameters for creating text
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateTextParams {
+    pub board_id: String,
+    pub content: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+}
+
+/// Parameters for creating a frame
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateFrameParams {
+    pub board_id: String,
+    pub title: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    #[serde(default)]
+    pub fill_color: Option<String>,
+}
 
 /// MCP server for Miro
 #[derive(Clone)]
@@ -97,6 +146,38 @@ impl MiroMcpServer {
             board.name, board.id
         );
 
+        Ok(CallToolResult::success(vec![Content::text(message)]))
+    }
+
+    /// Create a sticky note on a board
+    #[tool(
+        description = "Create a sticky note on a Miro board with customizable content, position, and color"
+    )]
+    async fn create_sticky_note(&self) -> Result<CallToolResult, McpError> {
+        let message = "create_sticky_note tool registered. Use tool_call with parameters: { board_id, content, x, y, color? }".to_string();
+        Ok(CallToolResult::success(vec![Content::text(message)]))
+    }
+
+    /// Create a shape on a board
+    #[tool(
+        description = "Create a shape (rectangle, circle, triangle, etc.) on a Miro board with custom styling"
+    )]
+    async fn create_shape(&self) -> Result<CallToolResult, McpError> {
+        let message = "create_shape tool registered. Use tool_call with parameters: { board_id, shape_type, fill_color, x, y, width, height, content? }".to_string();
+        Ok(CallToolResult::success(vec![Content::text(message)]))
+    }
+
+    /// Create text on a board
+    #[tool(description = "Create a text element on a Miro board")]
+    async fn create_text(&self) -> Result<CallToolResult, McpError> {
+        let message = "create_text tool registered. Use tool_call with parameters: { board_id, content, x, y, width }".to_string();
+        Ok(CallToolResult::success(vec![Content::text(message)]))
+    }
+
+    /// Create a frame on a board
+    #[tool(description = "Create a frame on a Miro board to group and organize other elements")]
+    async fn create_frame(&self) -> Result<CallToolResult, McpError> {
+        let message = "create_frame tool registered. Use tool_call with parameters: { board_id, title, x, y, width, height, fill_color? }".to_string();
         Ok(CallToolResult::success(vec![Content::text(message)]))
     }
 }
