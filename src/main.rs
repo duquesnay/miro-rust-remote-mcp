@@ -17,8 +17,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Miro MCP Server");
 
-    // Load configuration
-    let config = Config::from_env()?;
+    // Load configuration from ~/.config/mcp/miro-mcp-server/config.json
+    let config = Config::from_file()?;
     info!("Configuration loaded successfully");
 
     // Create MCP server

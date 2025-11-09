@@ -34,20 +34,44 @@ A production-ready Model Context Protocol (MCP) server for Miro board manipulati
 3. Note your **Client ID** and **Client Secret**
 4. Add redirect URI: `http://localhost:3010/oauth/callback` (for local development)
 
-### 2. Configure Environment
+### 2. Configure Application
+
+Create the configuration directory and file:
 
 ```bash
-# Copy example environment file
-cp .env.example .env
+# Create config directory
+mkdir -p ~/.config/mcp/miro-mcp-server
+
+# Copy example config
+cp config.example.json ~/.config/mcp/miro-mcp-server/config.json
 
 # Generate encryption key
 openssl rand -hex 32
 
-# Edit .env with your credentials
-MIRO_CLIENT_ID=your_client_id_here
-MIRO_CLIENT_SECRET=your_client_secret_here
-TOKEN_ENCRYPTION_KEY=<output from openssl command>
+# Edit config.json with your credentials
+nano ~/.config/mcp/miro-mcp-server/config.json
 ```
+
+Configuration file (`~/.config/mcp/miro-mcp-server/config.json`):
+
+```json
+{
+  "client_id": "your_client_id_here",
+  "client_secret": "your_client_secret_here",
+  "redirect_uri": "http://localhost:3010/oauth/callback",
+  "encryption_key": "output_from_openssl_rand_hex_32",
+  "port": 3010
+}
+```
+
+**Configuration Fields:**
+- `client_id`: Your Miro OAuth2 Client ID (from Miro Developer Portal)
+- `client_secret`: Your Miro OAuth2 Client Secret (from Miro Developer Portal)
+- `redirect_uri`: OAuth2 callback URL (must match Miro app configuration)
+  - Development: `http://localhost:3010/oauth/callback`
+  - Production: `https://your-domain.com/oauth/callback`
+- `encryption_key`: 32-byte hex string for token encryption (generate with `openssl rand -hex 32`)
+- `port`: Server port (3010 for development)
 
 ### 3. Build and Run
 
@@ -186,21 +210,30 @@ git merge feat/feature-name
 ## Deployment
 
 ### Local Development
-1. Configure .env with localhost redirect URI
+1. Configure `~/.config/mcp/miro-mcp-server/config.json` with localhost redirect URI
 2. Run `cargo run`
 3. OAuth callback works on localhost:3010
 
 ### Production (HTTPS Required)
 1. Deploy to hosting platform (Fly.io, Railway, or VPS)
 2. Configure HTTPS/TLS certificate
-3. Update redirect URI in .env and Miro Developer Portal
-4. Set environment variables on server
-5. Deploy with `cargo build --release`
+3. Update redirect URI in `~/.config/mcp/miro-mcp-server/config.json` and Miro Developer Portal
+4. Deploy with `cargo build --release`
+
+**Configuration on Production Server:**
+```bash
+# On your production server
+mkdir -p ~/.config/mcp/miro-mcp-server
+nano ~/.config/mcp/miro-mcp-server/config.json
+
+# Add your production configuration with HTTPS redirect URI:
+# "redirect_uri": "https://your-domain.com/oauth/callback"
+```
 
 **Recommended Platforms:**
-- **Fly.io**: Native Rust support, easy HTTPS setup
-- **Railway**: Simple deployment, automatic HTTPS
-- **Self-hosted**: Full control, requires Nginx for HTTPS
+- **Fly.io**: Native Rust support, easy HTTPS setup, built-in config management
+- **Railway**: Simple deployment, automatic HTTPS, environment-based config
+- **Self-hosted**: Full control, requires Nginx for HTTPS, manual config management
 
 ## Primary Use Case: Agile Squad Visualization
 
@@ -232,14 +265,20 @@ All in <5 minutes via natural language!
 
 ## Troubleshooting
 
+### "Configuration file not found"
+- Ensure config directory exists: `mkdir -p ~/.config/mcp/miro-mcp-server`
+- Copy example config: `cp config.example.json ~/.config/mcp/miro-mcp-server/config.json`
+- Edit config with your credentials: `nano ~/.config/mcp/miro-mcp-server/config.json`
+
 ### "Authentication failed"
-- Check client_id and client_secret in .env
-- Verify redirect URI matches Miro app configuration exactly
+- Check `client_id` and `client_secret` in `~/.config/mcp/miro-mcp-server/config.json`
+- Verify `redirect_uri` matches Miro app configuration exactly
 - Check token hasn't expired (refresh should be automatic)
 
 ### "Token encryption failed"
-- Ensure TOKEN_ENCRYPTION_KEY is exactly 64 hex characters (32 bytes)
+- Ensure `encryption_key` is exactly 64 hex characters (32 bytes)
 - Generate new key: `openssl rand -hex 32`
+- Update it in `~/.config/mcp/miro-mcp-server/config.json`
 
 ### "Rate limit exceeded"
 - Miro API limit: 100 requests/minute

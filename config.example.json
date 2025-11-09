@@ -1,0 +1,7 @@
+{
+  "client_id": "your_client_id_here",
+  "client_secret": "your_client_secret_here",
+  "redirect_uri": "http://localhost:3010/oauth/callback",
+  "encryption_key": "generate_with_openssl_rand_hex_32",
+  "port": 3010
+}
