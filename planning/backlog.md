@@ -1,12 +1,12 @@
 # Miro MCP Server - Product Backlog
 
 ## Completed
+- [x] AUTH1: User authenticates with Miro securely via OAuth2 ✅ 2025-11-10
+- [x] AUTH2: System refreshes tokens automatically (vs manual re-auth) ✅ 2025-11-10
 
 ## In Progress
 
 ## Planned
-- [ ] AUTH1: User authenticates with Miro securely via OAuth2
-- [ ] AUTH2: System refreshes tokens automatically (vs manual re-auth)
 - [ ] BOARD1: User lists accessible Miro boards programmatically
 - [ ] BOARD2: User creates new boards via Claude prompts
 - [ ] VIS1: User creates sticky notes with custom content and styling
