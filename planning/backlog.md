@@ -18,7 +18,4 @@
 - [ ] ITEM3: User removes items from boards
 - [ ] REL1: User connects items with styled arrows/lines
 - [ ] REL2: User adds captions to connectors
-- [ ] SQUAD1: User visualizes agile squad structure in <5 minutes
-- [ ] SQUAD2: User shows reporting lines between team members
-- [ ] SQUAD3: User indicates cross-squad dependencies visually
 - [ ] BULK1: User creates multiple items efficiently (vs individual API calls)
