@@ -1,5 +1,9 @@
 use crate::auth::{AuthError, MiroOAuthClient, TokenStore};
-use crate::miro::types::{Board, BoardsResponse, CreateBoardRequest, CreateBoardResponse};
+use crate::miro::types::{
+    Board, BoardsResponse, CreateBoardRequest, CreateBoardResponse, CreateFrameRequest,
+    CreateShapeRequest, CreateStickyNoteRequest, CreateTextRequest, FrameResponse, Geometry,
+    Position, ShapeResponse, StickyNoteResponse, TextResponse,
+};
 use reqwest::StatusCode;
 use serde_json::Value;
 use std::sync::Arc;
@@ -120,6 +124,143 @@ impl MiroClient {
         })
     }
 
+    /// Create a sticky note on a board
+    pub async fn create_sticky_note(
+        &self,
+        board_id: &str,
+        content: String,
+        x: f64,
+        y: f64,
+        color: String,
+    ) -> Result<StickyNoteResponse, MiroError> {
+        let request_body = CreateStickyNoteRequest {
+            data: crate::miro::types::StickyNoteData {
+                content,
+                shape: Some("square".to_string()),
+            },
+            style: crate::miro::types::StickyNoteStyle { fill_color: color },
+            position: Position {
+                x,
+                y,
+                origin: Some("center".to_string()),
+            },
+            geometry: Geometry {
+                width: 200.0,
+                height: None,
+            },
+        };
+        let json_body = serde_json::to_value(&request_body)?;
+        let path = format!("/boards/{}/sticky_notes", board_id);
+        let response = self.post(&path, Some(json_body)).await?;
+        let note: StickyNoteResponse = serde_json::from_value(response)?;
+        Ok(note)
+    }
+
+    /// Create a shape on a board
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_shape(
+        &self,
+        board_id: &str,
+        shape_type: String,
+        fill_color: String,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        content: Option<String>,
+    ) -> Result<ShapeResponse, MiroError> {
+        let shape_data = crate::miro::types::ShapeData {
+            content,
+            shape: shape_type,
+        };
+        let shape_style = crate::miro::types::ShapeStyle {
+            fill_color,
+            border_color: None,
+            border_width: None,
+        };
+        let position = Position { x, y, origin: None };
+        let geometry = Geometry {
+            width,
+            height: Some(height),
+        };
+
+        let request_body = CreateShapeRequest {
+            data: shape_data,
+            style: shape_style,
+            position,
+            geometry,
+        };
+
+        let json_body = serde_json::to_value(&request_body)?;
+        let path = format!("/boards/{}/shapes", board_id);
+        let response = self.post(&path, Some(json_body)).await?;
+        let shape: ShapeResponse = serde_json::from_value(response)?;
+        Ok(shape)
+    }
+
+    /// Create text on a board
+    pub async fn create_text(
+        &self,
+        board_id: &str,
+        content: String,
+        x: f64,
+        y: f64,
+        width: f64,
+    ) -> Result<TextResponse, MiroError> {
+        let request_body = CreateTextRequest {
+            data: crate::miro::types::TextData { content },
+            position: Position { x, y, origin: None },
+            geometry: Geometry {
+                width,
+                height: None,
+            },
+        };
+        let json_body = serde_json::to_value(&request_body)?;
+        let path = format!("/boards/{}/texts", board_id);
+        let response = self.post(&path, Some(json_body)).await?;
+        let text: TextResponse = serde_json::from_value(response)?;
+        Ok(text)
+    }
+
+    /// Create a frame on a board
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_frame(
+        &self,
+        board_id: &str,
+        title: String,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        fill_color: Option<String>,
+    ) -> Result<FrameResponse, MiroError> {
+        let frame_data = crate::miro::types::FrameData {
+            title,
+            frame_type: "frame".to_string(),
+        };
+        let frame_style = crate::miro::types::FrameStyle {
+            fill_color: fill_color.unwrap_or_else(|| "light_gray".to_string()),
+        };
+        let position = Position { x, y, origin: None };
+        let geometry = Geometry {
+            width,
+            height: Some(height),
+        };
+
+        let request_body = CreateFrameRequest {
+            data: frame_data,
+            style: frame_style,
+            position,
+            geometry,
+        };
+
+        let json_body = serde_json::to_value(&request_body)?;
+        let path = format!("/boards/{}/frames", board_id);
+        let response = self.post(&path, Some(json_body)).await?;
+        let frame: FrameResponse = serde_json::from_value(response)?;
+        Ok(frame)
+    }
+
     /// Make an authenticated request with automatic retry on 401
     async fn request(
         &self,
@@ -234,5 +375,71 @@ mod tests {
 
         let result = MiroClient::new(token_store, oauth_client);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_sticky_note_request_construction() {
+        let position = Position {
+            x: 100.0,
+            y: 200.0,
+            origin: Some("center".to_string()),
+        };
+        let geometry = Geometry {
+            width: 200.0,
+            height: None,
+        };
+
+        assert_eq!(position.x, 100.0);
+        assert_eq!(position.y, 200.0);
+        assert_eq!(geometry.width, 200.0);
+    }
+
+    #[test]
+    fn test_shape_response_deserialization() {
+        let json = r#"{
+            "id": "shape-456",
+            "data": {
+                "content": "<p>Shape content</p>",
+                "shape": "rectangle"
+            },
+            "style": {
+                "fillColor": "light_blue",
+                "borderColor": "blue",
+                "borderWidth": "2"
+            }
+        }"#;
+
+        let response: ShapeResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.id, "shape-456");
+    }
+
+    #[test]
+    fn test_text_response_deserialization() {
+        let json = r#"{
+            "id": "text-789",
+            "data": {
+                "content": "Sample text"
+            }
+        }"#;
+
+        let response: TextResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.id, "text-789");
+    }
+
+    #[test]
+    fn test_frame_response_deserialization() {
+        let json = r#"{
+            "id": "frame-012",
+            "data": {
+                "title": "My Frame",
+                "type": "frame"
+            },
+            "style": {
+                "fillColor": "light_gray"
+            }
+        }"#;
+
+        let response: FrameResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.id, "frame-012");
     }
 }
