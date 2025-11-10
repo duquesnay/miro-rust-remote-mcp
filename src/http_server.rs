@@ -1,4 +1,7 @@
-use crate::auth::{CookieStateManager, MiroOAuthClient, OAuthCookieState, TokenStore};
+use crate::auth::{
+    CookieStateManager, CookieTokenManager, MiroOAuthClient, OAuthCookieState, OAuthTokenCookie,
+    TokenStore,
+};
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
@@ -23,8 +26,9 @@ pub struct OAuthCallback {
 #[derive(Clone)]
 pub struct AppState {
     oauth_client: Arc<MiroOAuthClient>,
-    token_store: Arc<RwLock<TokenStore>>,
-    cookie_manager: CookieStateManager,
+    token_store: Arc<RwLock<TokenStore>>, // Kept for backwards compatibility
+    cookie_state_manager: CookieStateManager,
+    cookie_token_manager: CookieTokenManager,
 }
 
 /// Handle OAuth callback from Miro
@@ -36,7 +40,8 @@ async fn oauth_callback(
     info!("Received OAuth callback with code");
 
     match handle_oauth_exchange(params, state, headers).await {
-        Ok(()) => Html(
+        Ok(token_cookie) => {
+            let mut response = Html(
             r#"
             <!DOCTYPE html>
             <html>
@@ -75,8 +80,18 @@ async fn oauth_callback(
             </body>
             </html>
             "#
-        )
-        .into_response(),
+            )
+            .into_response();
+
+            // Set token cookie
+            let cookie_header = format!("{}={}", token_cookie.name(), token_cookie.value());
+            response.headers_mut().insert(
+                header::SET_COOKIE,
+                cookie_header.parse().unwrap(),
+            );
+
+            response
+        }
         Err(e) => {
             error!("OAuth exchange failed: {}", e);
             (
@@ -134,14 +149,15 @@ async fn handle_oauth_exchange(
     params: OAuthCallback,
     app_state: AppState,
     headers: axum::http::HeaderMap,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<cookie::Cookie<'static>, Box<dyn std::error::Error>> {
     // Extract cookie from request headers
     let cookie_value = headers
         .get(header::COOKIE)
         .and_then(|h| h.to_str().ok())
         .and_then(|cookies| {
             // Parse cookies and find miro_oauth_state
-            cookies.split(';')
+            cookies
+                .split(';')
                 .map(|c| c.trim())
                 .find(|c| c.starts_with("miro_oauth_state="))
                 .map(|c| c.strip_prefix("miro_oauth_state=").unwrap().to_string())
@@ -150,7 +166,7 @@ async fn handle_oauth_exchange(
 
     // Retrieve and validate OAuth state from cookie
     let oauth_state = app_state
-        .cookie_manager
+        .cookie_state_manager
         .retrieve_and_validate(&cookie_value, &params.state)
         .map_err(|e| format!("Cookie validation failed: {}", e))?;
 
@@ -163,12 +179,22 @@ async fn handle_oauth_exchange(
         .exchange_code(params.code, pkce_verifier)
         .await?;
 
-    // Save tokens to encrypted storage
-    let token_store = app_state.token_store.write().await;
-    token_store.save(&tokens)?;
+    // Calculate expires_in from expires_at
+    let expires_in = tokens.expires_in() as u64;
 
-    info!("OAuth tokens saved successfully");
-    Ok(())
+    // Create token cookie
+    let token_cookie_data = OAuthTokenCookie::new(
+        tokens.access_token.clone(),
+        tokens.refresh_token.clone().unwrap_or_default(),
+        expires_in,
+    );
+
+    let token_cookie = app_state
+        .cookie_token_manager
+        .create_cookie(token_cookie_data)?;
+
+    info!("OAuth tokens stored in encrypted cookie");
+    Ok(token_cookie)
 }
 
 /// Initiate OAuth flow - creates cookie and redirects to Miro
@@ -201,7 +227,7 @@ async fn handle_oauth_authorize(
 
     // Create encrypted cookie
     let cookie = app_state
-        .cookie_manager
+        .cookie_state_manager
         .create_cookie(oauth_state)
         .map_err(|e| format!("Failed to create cookie: {}", e))?;
 
@@ -229,12 +255,14 @@ async fn health_check() -> impl IntoResponse {
 pub fn create_app(
     oauth_client: Arc<MiroOAuthClient>,
     token_store: Arc<RwLock<TokenStore>>,
-    cookie_manager: CookieStateManager,
+    cookie_state_manager: CookieStateManager,
+    cookie_token_manager: CookieTokenManager,
 ) -> Router {
     let state = AppState {
         oauth_client,
         token_store,
-        cookie_manager,
+        cookie_state_manager,
+        cookie_token_manager,
     };
 
     Router::new()
@@ -249,9 +277,15 @@ pub async fn run_server(
     port: u16,
     oauth_client: Arc<MiroOAuthClient>,
     token_store: Arc<RwLock<TokenStore>>,
-    cookie_manager: CookieStateManager,
+    cookie_state_manager: CookieStateManager,
+    cookie_token_manager: CookieTokenManager,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = create_app(oauth_client, token_store, cookie_manager);
+    let app = create_app(
+        oauth_client,
+        token_store,
+        cookie_state_manager,
+        cookie_token_manager,
+    );
     let addr = format!("127.0.0.1:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
@@ -282,9 +316,15 @@ mod tests {
         let config = get_test_config();
         let oauth_client = Arc::new(MiroOAuthClient::new(&config).unwrap());
         let token_store = Arc::new(RwLock::new(TokenStore::new(config.encryption_key).unwrap()));
-        let cookie_manager = CookieStateManager::from_config(config.encryption_key);
+        let cookie_state_manager = CookieStateManager::from_config(config.encryption_key);
+        let cookie_token_manager = CookieTokenManager::from_config(config.encryption_key);
 
-        let app = create_app(oauth_client, token_store, cookie_manager);
+        let app = create_app(
+            oauth_client,
+            token_store,
+            cookie_state_manager,
+            cookie_token_manager,
+        );
         assert!(std::mem::size_of_val(&app) > 0);
     }
 }
