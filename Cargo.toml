@@ -29,8 +29,12 @@ cookie = { version = "0.18", features = ["private", "secure"] }
 uuid = { version = "1.0", features = ["v4"] }
 chrono = "0.4"
 sha2 = "0.10"
+lru = "0.12"
 
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.6"
 serial_test = "3.0"
+
+[features]
+test-utils = []

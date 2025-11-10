@@ -70,6 +70,12 @@ pub enum AuthError {
     #[error("CSRF validation failed")]
     CsrfValidationFailed,
 
+    #[error("Token validation failed: {0}")]
+    TokenValidationFailed(String),
+
+    #[error("Token is invalid or expired")]
+    TokenInvalid,
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
