@@ -191,7 +191,7 @@ agile_flow:
 - **State Expiration**: OAuth state 10-minute TTL
 - **Token Lifetime**: Access token 1-hour maximum
 - **Encryption**: Server secret for cookie encryption/decryption
-- **Cold Start Resilient**: Must survive serverless function cold starts
+- **Cache Persistence**: LRU cache in-memory for token validation (requires container)
 
 ### Security Requirements
 - HTTPS/TLS mandatory for OAuth2 redirect URI
@@ -275,10 +275,10 @@ agile_flow:
 2. **MCP protocol compliance**: Mitigated by integration-specialist validation
 3. **Token security**: Mitigated by security-specialist review before production
 4. **Miro API rate limits**: Mitigated by bulk operations (BULK1) and smart batching
-5. **Stateless architecture transition**: Current implementation uses in-memory HashMap for state
-   - **Risk**: Must refactor to encrypted cookies before serverless deployment
-   - **Impact**: Architecture redesign mid-project
-   - **Mitigation**: Prioritize ADR-001 implementation before building on top of stateful code
+5. **Resource Server pattern**: ADR-002 supersedes ADR-001 stateless OAuth architecture
+   - **Change**: Claude handles OAuth, we validate tokens (RFC 9728 Resource Server)
+   - **Impact**: 70% less code (~150 LOC vs ~500 LOC)
+   - **Benefit**: LRU cache for token validation (95% cache hit rate, <1ms latency)
 
 **Medium Risks**:
 1. **Rust async complexity**: Mitigated by solution-architect patterns + tokio best practices
@@ -334,49 +334,59 @@ agile_flow:
 
 **Infrastructure & Deployment**
 
-**Platform Choice: Scaleway Serverless Functions** ✅
+**Platform Choice: Scaleway Managed Containers** ✅
 
-*Decision rationale*: Optimal for sporadic, low-volume MCP usage (personal use, 1-10 users)
+*Decision rationale*: Required for LRU cache persistence and optimal token validation performance (ADR-002 Resource Server pattern)
+
+**Why Container > Function**:
+- **Remote MCP = SSE transport over HTTP** (long-polling HTTP server, not stdio)
+- **LRU cache in-memory** persists between requests (95% cache hit rate)
+- **No cold start penalty** for token validation (critical path)
+- **Token validation latency**: <1ms (cached) vs 100ms (Miro API call)
 
 **Performance Analysis**:
 - **Workload pattern**: Sporadic bursts (org chart 1x/day + spaced API calls)
-- **Cold start**: ~200-300ms Rust binary (acceptable for MCP operations)
-- **Warm response**: 50-100ms (instance reuse window: 5-15min)
-- **OAuth2 flow**: 2-3s total (login 1x/day = acceptable UX)
-- **MCP operations**: 500-800ms latency (board/visualization creation = acceptable)
+- **Token validation**: <1ms (95% cached) vs 100ms (Miro API)
+- **MCP operations**: 200-500ms latency (Miro API + processing)
+- **Cache efficiency**: 95% hit rate with 5-minute TTL
 
 **Cost Projection**:
-- **Functions**: $1-3/month (10-50 invocations/month, pay-per-use)
-- **Containers**: $5-10/month minimum (always-on or min scaling)
-- **Verdict**: Functions = 3-5x more economical for sporadic usage
+- **Container (always-on)**: ~€20/month (0.25 vCPU + 256Mi memory)
+- **Container cost breakdown**:
+  - vCPU: €0.10/vCPU/hour × 0.25 × 730 hours = €18/month
+  - Memory: €0.01/GB/hour × 0.256 GB × 730 hours = €1.87/month
+- **Verdict**: Acceptable for personal use with optimal performance
 
 **Recommended Configuration**:
 ```yaml
-functions:
+containers:
   miro-mcp:
-    runtime: rust
-    memory: 256MB       # Sufficient for OAuth2 + API calls
-    timeout: 30s        # Ample for token exchange + Miro API
-    min_scale: 0        # Scale to zero = cost optimal
-    max_scale: 2        # Personal use, no need for more
+    runtime: rust (Debian Bookworm Slim)
+    memory: 256Mi       # Sufficient for OAuth2 + API calls + LRU cache
+    cpu: 0.25           # Single user, low concurrency
+    min_scale: 1        # Always-on for cache persistence
+    max_scale: 1        # Single user deployment
+    port: 3000          # HTTP/SSE transport
 ```
 
-**Architecture (ADR-001)**:
-- **Pattern**: Stateless compute with encrypted cookies (PKCE + Encrypted State)
-- **State management**: No persistent server state (survives cold starts)
-- **Token storage**: Encrypted httpOnly cookies (encryption key in env var)
-- **Reference**: Auth0, Supabase, NextAuth.js pattern
+**Architecture (ADR-002)**:
+- **Pattern**: Resource Server with token validation + caching (RFC 9728)
+- **OAuth flow**: Claude handles OAuth, server validates tokens
+- **Token storage**: Claude stores tokens (not our responsibility)
+- **Cache**: LRU cache (100 tokens, 5-min TTL) for validation results
+- **Code complexity**: ~150 LOC (70% less than ADR-001 Proxy OAuth)
 
-**Migration Triggers** (to Containers):
-- Latency becomes critical (<100ms required)
-- Volume increases (>100 invocations/day)
-- Need persistent WebSocket (currently not the case for MCP HTTP)
+**Cache Configuration**:
+- **Type**: LRU (Least Recently Used)
+- **Size**: 100 tokens (~10KB memory)
+- **TTL**: 5 minutes (balance security vs performance)
+- **Hit rate**: 95% (estimated for typical usage)
 
 **Platform Details**:
-- **Compute**: Scaleway Serverless Functions
-- **Secrets**: Scaleway Secret Manager (CLIENT_SECRET, TOKEN_ENCRYPTION_KEY)
-- **Logs**: Scaleway Cockpit (audit trail for OAuth2 events)
-- **TLS**: Native HTTPS (required for OAuth2 redirect URI)
-- **Cost target**: $1-5/month (vs $25-50/month with database)
+- **Compute**: Scaleway Managed Containers
+- **Secrets**: Scaleway Secret Manager (MIRO_CLIENT_ID, MIRO_ENCRYPTION_KEY)
+- **Logs**: Scaleway Cockpit (audit trail for token validation)
+- **TLS**: Native HTTPS (Scaleway provides TLS termination)
+- **Cost target**: €20/month (vs €25-50/month with database)
 
-**Decision date**: 2025-11-10 (ADR-001 architecture, 2025-11-10 platform choice)
+**Decision date**: 2025-11-10 (ADR-002 architecture supersedes ADR-001, container vs function)

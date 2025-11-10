@@ -215,7 +215,7 @@ git merge feat/feature-name
 3. OAuth callback works on localhost:3010
 
 ### Production (HTTPS Required)
-1. Deploy to hosting platform (Fly.io, Railway, or VPS)
+1. Deploy to Scaleway Containers (or alternative platform)
 2. Configure HTTPS/TLS certificate
 3. Update redirect URI in `~/.config/mcp/miro-rust/config.json` and Miro Developer Portal
 4. Deploy with `cargo build --release`
@@ -231,7 +231,7 @@ nano ~/.config/mcp/miro-rust/config.json
 ```
 
 **Recommended Platforms:**
-- **Fly.io**: Native Rust support, easy HTTPS setup, built-in config management
+- **Scaleway Containers** (Selected): Container-based deployment, native HTTPS, predictable pricing
 - **Railway**: Simple deployment, automatic HTTPS, environment-based config
 - **Self-hosted**: Full control, requires Nginx for HTTPS, manual config management
 

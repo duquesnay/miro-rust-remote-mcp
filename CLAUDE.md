@@ -574,21 +574,20 @@ tokio-test = "0.4"
 
 **HTTPS Required**: OAuth2 redirect URI must use HTTPS
 
-**Platform Options**:
-1. **Fly.io** (Recommended):
-   - Native Rust support
-   - Easy HTTPS setup
-   - Good for MCP servers
+**Platform: Scaleway Containers** ✅ (Selected 2025-11-10)
 
-2. **Railway**:
-   - Similar to Fly.io
-   - Simple deployment
+**Rationale**:
+- Container-based deployment for MCP server
+- Native HTTPS support (required for OAuth2)
+- Stateless architecture (ADR-002) compatible
+- Predictable pricing and resource allocation
+- Supports Resource Server pattern with token validation
 
-3. **Self-hosted VPS**:
-   - Full control
-   - Nginx reverse proxy for HTTPS
+**Configuration**: See [planning/framing.md](planning/framing.md) for deployment details
 
-**Decision Timeline**: End of Sprint 1
+**Alternative Platforms** (if requirements change):
+- **Railway**: Simple deployment alternative
+- **Self-hosted VPS**: Full control but requires Nginx for HTTPS
 
 ### Environment Variables
 
@@ -596,7 +595,7 @@ tokio-test = "0.4"
 # Required for production
 MIRO_CLIENT_ID=3458764647516852398
 MIRO_CLIENT_SECRET=<from secure store>
-MIRO_REDIRECT_URI=https://your-mcp-server.fly.dev/oauth/callback
+MIRO_REDIRECT_URI=https://[container-name].containers.scw.cloud/oauth/callback
 MCP_SERVER_PORT=3000
 TOKEN_ENCRYPTION_KEY=<generated securely>
 ```
