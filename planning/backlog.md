@@ -32,11 +32,14 @@
 - [x] AUTH3: User completes OAuth flow in browser from Claude Desktop (vs manual token management) ✅ 2025-11-10
 - [x] AUTH4: Developer adds OAuth state via encrypted cookies (vs in-memory HashMap) ✅ 2025-11-10
 - [x] AUTH5: User's access token stored in encrypted cookies (vs server-side storage) ✅ 2025-11-10
-  - Note: Implemented but superseded by ADR-002 (Resource Server pattern)
+  - Note: Implemented but superseded by ADR-003 (HTTP Resource Server mode)
 - [x] AUTH6: Claude discovers OAuth via metadata endpoint (vs manual configuration) ✅ 2025-11-10
 - [x] AUTH7: Server extracts Bearer tokens from Authorization header (vs cookies) ✅ 2025-11-10
 - [x] AUTH8: Server validates tokens with Miro introspection API (vs trusting Claude) ✅ 2025-11-10
 - [x] AUTH9: Token validation cached with 5-minute TTL (vs 100ms latency per request) ✅ 2025-11-10
+- [x] PROTO1: Claude.ai connects via MCP protocol (vs REST-only server) ✅ 2025-11-10
+- [x] DEPLOY2: System deploys to Scaleway Containers successfully ✅ 2025-11-10
+  - Note: Deployed with MCP protocol support; Container: miro-mcp at flyagileapipx8njvei-miro-mcp.functions.fnc.fr-par.scw.cloud
 
 ## In Progress
 
@@ -46,45 +49,7 @@
 
 ## Planned
 
-### Critical (ADR-002 Implementation - Resource Server Pattern)
-
-- [ ] **AUTH8**: Server validates tokens with Miro introspection API (vs trusting Claude)
-  - **Outcome**: User identity known for audit logging and security
-  - **Acceptance Criteria**:
-    - Call `GET https://api.miro.com/v1/oauth-token` with Bearer token
-    - Parse user info (user_id, team_id, scopes)
-    - Return 401 for invalid/expired tokens
-    - Log user_id for each request
-    - Test with valid/invalid/expired tokens
-  - **Dependencies**: AUTH7
-  - **Complexity**: 1.0 (API integration)
-
-- [ ] **AUTH9**: Token validation cached with 5-minute TTL (vs 100ms latency per request)
-  - **Outcome**: 95% reduction in validation latency (100ms → <1ms)
-  - **Acceptance Criteria**:
-    - Implement LRU cache (100 token capacity)
-    - Cache validated user info for 5 minutes
-    - First request: validate with Miro (cache miss)
-    - Subsequent requests: serve from cache (cache hit)
-    - Test cache hit/miss scenarios
-    - Measure latency improvement
-  - **Dependencies**: AUTH8
-  - **Complexity**: 1.5 (caching logic)
-
 ### High Priority (Production Readiness - Scaleway Containers)
-
-- [ ] **DEPLOY2**: System deploys to Scaleway Containers successfully
-  - **Outcome**: Production infrastructure configured for stateless container architecture
-  - **Acceptance Criteria**:
-    - Create Dockerfile for Rust MCP server
-    - Configure container with persistent in-memory LRU cache
-    - Deploy to Scaleway Containers with HTTPS
-    - Verify HTTPS certificate auto-configuration
-    - Test OAuth2 redirect URI (https://[container-name].containers.scw.cloud/...)
-    - Validate container responds to MCP protocol requests
-  - **Dependencies**: AUTH8, AUTH9 (token validation with caching complete)
-  - **Complexity**: 1.5 (platform deployment)
-  - **Note**: Platform choice made 2025-11-10 (see framing.md); Containers selected for LRU cache persistence
 
 - [ ] **SEC1**: Developer configures secrets securely via Scaleway Secret Manager
   - **Outcome**: Sensitive credentials isolated from application code and logs
@@ -130,11 +95,11 @@
   - **Outcome**: Future maintainers grasp architecture and security trade-offs
   - **Acceptance Criteria**:
     - Document Pattern B architecture (PKCE + encrypted cookies)
-    - Explain why stateless vs database (ADR-001 rationale)
+    - Explain why stateless vs database (ADR-003 rationale)
     - Document cookie encryption implementation
     - Provide example flows (authorization, callback, token use)
     - Document migration path to database (if needed >100 users)
-    - Link to ADR-001 and industry references
+    - Link to ADR-003 and industry references
   - **Dependencies**: AUTH4, AUTH5 (implementation complete)
   - **Complexity**: 0.5 (documentation only)
 
@@ -142,7 +107,7 @@
   - **Outcome**: Clear deployment documentation for production maintenance
   - **Acceptance Criteria**:
     - Document Scaleway Functions deployment steps (from source to running function)
-    - Explain stateless architecture compatibility (ADR-001 Pattern B + Functions)
+    - Explain stateless architecture compatibility (ADR-003 HTTP mode + Functions)
     - Document secret management via Scaleway Secret Manager
     - Provide Cockpit query examples for troubleshooting auth issues
     - Document cold start mitigation strategies (if needed)
