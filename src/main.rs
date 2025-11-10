@@ -21,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Miro MCP Server");
 
-    // Load configuration from ~/.config/mcp/miro-rust/config.json
-    let config = Config::from_file()?;
+    // Load configuration (env vars first, then config file)
+    let config = Config::from_env_or_file()?;
     info!("Configuration loaded successfully");
 
     // Create MCP server
