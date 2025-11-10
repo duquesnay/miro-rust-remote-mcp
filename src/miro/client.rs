@@ -57,6 +57,103 @@ impl MiroClient {
         })
     }
 
+    // ==================== Builder Convenience Methods ====================
+
+    /// Create a sticky note builder for fluent API usage
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use miro_mcp_server::miro::client::MiroClient;
+    /// # async fn example(client: &MiroClient) -> Result<(), Box<dyn std::error::Error>> {
+    /// let note = client.sticky_note("board-id", "Hello", 0.0, 100.0)
+    ///     .color("yellow")
+    ///     .build(&client)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn sticky_note(
+        &self,
+        board_id: impl Into<String>,
+        content: impl Into<String>,
+        x: f64,
+        y: f64,
+    ) -> crate::miro::builders::StickyNoteBuilder {
+        crate::miro::builders::StickyNoteBuilder::new(board_id, content, x, y)
+    }
+
+    /// Create a shape builder for fluent API usage
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use miro_mcp_server::miro::client::MiroClient;
+    /// # async fn example(client: &MiroClient) -> Result<(), Box<dyn std::error::Error>> {
+    /// let shape = client.shape("board-id", "rectangle", 0.0, 100.0, 200.0, 100.0)
+    ///     .fill_color("blue")
+    ///     .build(&client)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn shape(
+        &self,
+        board_id: impl Into<String>,
+        shape_type: impl Into<String>,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> crate::miro::builders::ShapeBuilder {
+        crate::miro::builders::ShapeBuilder::new(board_id, shape_type, x, y, width, height)
+    }
+
+    /// Create a text builder for fluent API usage
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use miro_mcp_server::miro::client::MiroClient;
+    /// # async fn example(client: &MiroClient) -> Result<(), Box<dyn std::error::Error>> {
+    /// let text = client.text("board-id", "Hello", 0.0, 100.0, 300.0)
+    ///     .parent_id("frame-123")
+    ///     .build(&client)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn text(
+        &self,
+        board_id: impl Into<String>,
+        content: impl Into<String>,
+        x: f64,
+        y: f64,
+        width: f64,
+    ) -> crate::miro::builders::TextBuilder {
+        crate::miro::builders::TextBuilder::new(board_id, content, x, y, width)
+    }
+
+    /// Create a connector builder for fluent API usage
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use miro_mcp_server::miro::client::MiroClient;
+    /// # async fn example(client: &MiroClient) -> Result<(), Box<dyn std::error::Error>> {
+    /// let connector = client.connector("board-id", "item-1", "item-2")
+    ///     .stroke_color("blue")
+    ///     .end_cap("arrow")
+    ///     .build(&client)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn connector(
+        &self,
+        board_id: impl Into<String>,
+        start_item_id: impl Into<String>,
+        end_item_id: impl Into<String>,
+    ) -> crate::miro::builders::ConnectorBuilder {
+        crate::miro::builders::ConnectorBuilder::new(board_id, start_item_id, end_item_id)
+    }
+
     /// Helper to construct Parent from optional parent_id
     fn make_parent(parent_id: Option<String>) -> Option<Parent> {
         parent_id.map(|id| Parent { id })
