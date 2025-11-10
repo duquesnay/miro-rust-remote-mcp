@@ -52,7 +52,14 @@ impl TokenStore {
     }
 
     /// Get the storage path for tokens
+    /// Priority: TOKEN_STORAGE_PATH env var > default (~/.miro-mcp/tokens.enc)
     fn get_storage_path() -> Result<PathBuf, AuthError> {
+        // Check for TOKEN_STORAGE_PATH environment variable first (for container deployment)
+        if let Ok(path) = std::env::var("TOKEN_STORAGE_PATH") {
+            return Ok(PathBuf::from(path));
+        }
+
+        // Fallback to default path (for local development)
         let home = std::env::var("HOME").map_err(|_| {
             AuthError::TokenStorageError("HOME environment variable not set".to_string())
         })?;
