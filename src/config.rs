@@ -121,6 +121,65 @@ impl Config {
         Ok(config_dir)
     }
 
+    /// Load configuration from environment variables
+    /// Reads: MIRO_CLIENT_ID, MIRO_CLIENT_SECRET, MIRO_REDIRECT_URI, MIRO_ENCRYPTION_KEY, MCP_SERVER_PORT
+    pub fn from_env_vars() -> Result<Self, ConfigError> {
+        let client_id = std::env::var("MIRO_CLIENT_ID")
+            .map_err(|_| ConfigError::FileNotFound {
+                path: "environment".to_string(),
+                reason: "MIRO_CLIENT_ID environment variable not set".to_string(),
+            })?;
+
+        let client_secret = std::env::var("MIRO_CLIENT_SECRET")
+            .map_err(|_| ConfigError::FileNotFound {
+                path: "environment".to_string(),
+                reason: "MIRO_CLIENT_SECRET environment variable not set".to_string(),
+            })?;
+
+        let redirect_uri = std::env::var("MIRO_REDIRECT_URI")
+            .map_err(|_| ConfigError::FileNotFound {
+                path: "environment".to_string(),
+                reason: "MIRO_REDIRECT_URI environment variable not set".to_string(),
+            })?;
+
+        // Validate redirect URI
+        let _ = url::Url::parse(&redirect_uri)?;
+
+        let encryption_key_hex = std::env::var("MIRO_ENCRYPTION_KEY")
+            .map_err(|_| ConfigError::FileNotFound {
+                path: "environment".to_string(),
+                reason: "MIRO_ENCRYPTION_KEY environment variable not set".to_string(),
+            })?;
+
+        let encryption_key = Self::parse_encryption_key(&encryption_key_hex)?;
+
+        let port = std::env::var("MCP_SERVER_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(3000);
+
+        Ok(Config {
+            client_id,
+            client_secret,
+            redirect_uri,
+            encryption_key,
+            port,
+        })
+    }
+
+    /// Load configuration from environment variables first, fallback to config file
+    /// Priority: Environment variables > Config file
+    pub fn from_env_or_file() -> Result<Self, ConfigError> {
+        // Try environment variables first (for container deployment)
+        match Self::from_env_vars() {
+            Ok(config) => Ok(config),
+            Err(_) => {
+                // Fall back to config file (for local development)
+                Self::from_file()
+            }
+        }
+    }
+
     /// Load configuration from environment variables (legacy method, deprecated)
     #[deprecated(since = "0.2.0", note = "Use Config::from_file() instead")]
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -169,5 +228,93 @@ mod tests {
         let hex = "not_valid_hex_string_here_xxxxxx";
         let result = Config::parse_encryption_key(hex);
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_from_env_vars_success() {
+        // Set required environment variables
+        std::env::set_var("MIRO_CLIENT_ID", "test_client_id");
+        std::env::set_var("MIRO_CLIENT_SECRET", "test_secret");
+        std::env::set_var("MIRO_REDIRECT_URI", "http://localhost:3000/callback");
+        std::env::set_var(
+            "MIRO_ENCRYPTION_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+        std::env::set_var("MCP_SERVER_PORT", "8080");
+
+        let result = Config::from_env_vars();
+        assert!(result.is_ok());
+
+        let config = result.unwrap();
+        assert_eq!(config.client_id, "test_client_id");
+        assert_eq!(config.client_secret, "test_secret");
+        assert_eq!(config.redirect_uri, "http://localhost:3000/callback");
+        assert_eq!(config.port, 8080);
+
+        // Cleanup
+        std::env::remove_var("MIRO_CLIENT_ID");
+        std::env::remove_var("MIRO_CLIENT_SECRET");
+        std::env::remove_var("MIRO_REDIRECT_URI");
+        std::env::remove_var("MIRO_ENCRYPTION_KEY");
+        std::env::remove_var("MCP_SERVER_PORT");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_from_env_vars_missing_var() {
+        // Ensure variables are not set
+        std::env::remove_var("MIRO_CLIENT_ID");
+        std::env::remove_var("MIRO_CLIENT_SECRET");
+
+        let result = Config::from_env_vars();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_from_env_vars_default_port() {
+        // Set required environment variables (without port)
+        std::env::set_var("MIRO_CLIENT_ID", "test_client_id");
+        std::env::set_var("MIRO_CLIENT_SECRET", "test_secret");
+        std::env::set_var("MIRO_REDIRECT_URI", "http://localhost:3000/callback");
+        std::env::set_var(
+            "MIRO_ENCRYPTION_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+        std::env::remove_var("MCP_SERVER_PORT");
+
+        let result = Config::from_env_vars();
+        assert!(result.is_ok());
+
+        let config = result.unwrap();
+        assert_eq!(config.port, 3000); // Default port
+
+        // Cleanup
+        std::env::remove_var("MIRO_CLIENT_ID");
+        std::env::remove_var("MIRO_CLIENT_SECRET");
+        std::env::remove_var("MIRO_REDIRECT_URI");
+        std::env::remove_var("MIRO_ENCRYPTION_KEY");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_from_env_vars_invalid_redirect_uri() {
+        std::env::set_var("MIRO_CLIENT_ID", "test_client_id");
+        std::env::set_var("MIRO_CLIENT_SECRET", "test_secret");
+        std::env::set_var("MIRO_REDIRECT_URI", "not_a_valid_url");
+        std::env::set_var(
+            "MIRO_ENCRYPTION_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+
+        let result = Config::from_env_vars();
+        assert!(result.is_err());
+
+        // Cleanup
+        std::env::remove_var("MIRO_CLIENT_ID");
+        std::env::remove_var("MIRO_CLIENT_SECRET");
+        std::env::remove_var("MIRO_REDIRECT_URI");
+        std::env::remove_var("MIRO_ENCRYPTION_KEY");
     }
 }
