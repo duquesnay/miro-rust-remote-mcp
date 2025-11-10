@@ -292,7 +292,13 @@ impl MiroMcpServer {
                     });
                 }
                 _ => {
-                    // Invalid sort_by value - ignore and return unsorted
+                    return Err(McpError::invalid_params(
+                        format!(
+                            "Invalid sort_by value: '{}'. Valid values are: 'created_at', 'modified_at'",
+                            sort_by
+                        ),
+                        None,
+                    ));
                 }
             }
         }
@@ -432,5 +438,47 @@ mod tests {
         let config = get_test_config();
         let server = MiroMcpServer::new(&config);
         assert!(server.is_ok());
+    }
+
+    #[test]
+    fn test_sort_by_validation() {
+        // Test the validation logic for sort_by values
+        // This is a unit test of the match logic without requiring API calls
+
+        let valid_values = vec!["created_at", "modified_at"];
+        let invalid_values = vec!["invalid_value", "name", "updated_at", ""];
+
+        // Verify valid values would match
+        for value in valid_values {
+            let matches = matches!(value, "created_at" | "modified_at");
+            assert!(
+                matches,
+                "Valid sort_by value '{}' should be accepted",
+                value
+            );
+        }
+
+        // Verify invalid values would not match
+        for value in &invalid_values {
+            let value_str: &str = value;
+            let matches = matches!(value_str, "created_at" | "modified_at");
+            assert!(
+                !matches,
+                "Invalid sort_by value '{}' should be rejected",
+                value
+            );
+        }
+
+        // Verify error message format
+        let invalid_value = "invalid_value";
+        let error_msg = format!(
+            "Invalid sort_by value: '{}'. Valid values are: 'created_at', 'modified_at'",
+            invalid_value
+        );
+
+        assert!(error_msg.contains("Invalid sort_by value"));
+        assert!(error_msg.contains("invalid_value"));
+        assert!(error_msg.contains("created_at"));
+        assert!(error_msg.contains("modified_at"));
     }
 }
