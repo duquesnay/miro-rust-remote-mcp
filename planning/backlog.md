@@ -25,6 +25,7 @@
 - [x] TEST1: Parent filtering verified through integration tests (vs unit-only coverage) ✅ 2025-11-10
 - [x] TECH4: System validates sort_by values explicitly (vs silent failures) ✅ 2025-11-10
 - [x] DEPLOY1: Developer deploys to Scaleway in <5min (vs manual local setup) ✅ 2025-11-10
+- [x] CI1: Developer receives automated test feedback on every push (vs manual local testing) ✅ 2025-11-10
 
 ## In Progress
 
