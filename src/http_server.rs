@@ -1,6 +1,5 @@
 use crate::auth::{
     CookieStateManager, CookieTokenManager, MiroOAuthClient, OAuthCookieState, OAuthTokenCookie,
-    TokenStore,
 };
 use axum::{
     extract::{Query, State},
@@ -12,7 +11,6 @@ use axum::{
 use oauth2::PkceCodeVerifier;
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{error, info};
 
 /// OAuth callback query parameters
@@ -26,7 +24,6 @@ pub struct OAuthCallback {
 #[derive(Clone)]
 pub struct AppState {
     oauth_client: Arc<MiroOAuthClient>,
-    token_store: Arc<RwLock<TokenStore>>, // Kept for backwards compatibility
     cookie_state_manager: CookieStateManager,
     cookie_token_manager: CookieTokenManager,
 }
@@ -254,13 +251,11 @@ async fn health_check() -> impl IntoResponse {
 /// Create and configure the HTTP server
 pub fn create_app(
     oauth_client: Arc<MiroOAuthClient>,
-    token_store: Arc<RwLock<TokenStore>>,
     cookie_state_manager: CookieStateManager,
     cookie_token_manager: CookieTokenManager,
 ) -> Router {
     let state = AppState {
         oauth_client,
-        token_store,
         cookie_state_manager,
         cookie_token_manager,
     };
@@ -276,13 +271,11 @@ pub fn create_app(
 pub async fn run_server(
     port: u16,
     oauth_client: Arc<MiroOAuthClient>,
-    token_store: Arc<RwLock<TokenStore>>,
     cookie_state_manager: CookieStateManager,
     cookie_token_manager: CookieTokenManager,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let app = create_app(
         oauth_client,
-        token_store,
         cookie_state_manager,
         cookie_token_manager,
     );
@@ -315,13 +308,11 @@ mod tests {
     fn test_create_app() {
         let config = get_test_config();
         let oauth_client = Arc::new(MiroOAuthClient::new(&config).unwrap());
-        let token_store = Arc::new(RwLock::new(TokenStore::new(config.encryption_key).unwrap()));
         let cookie_state_manager = CookieStateManager::from_config(config.encryption_key);
         let cookie_token_manager = CookieTokenManager::from_config(config.encryption_key);
 
         let app = create_app(
             oauth_client,
-            token_store,
             cookie_state_manager,
             cookie_token_manager,
         );
