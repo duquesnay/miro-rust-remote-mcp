@@ -22,10 +22,11 @@
 - [x] FRAME3: User filters items by containing frame ✅ 2025-11-10
 - [x] FRAME4: User removes items from frames to board root ✅ 2025-11-10
 - [x] TECH2: Developer modifies parent construction in single location (vs 5 duplications) ✅ 2025-11-10
+- [x] TEST1: Parent filtering verified through integration tests (vs unit-only coverage) ✅ 2025-11-10
+- [x] TECH4: System validates sort_by values explicitly (vs silent failures) ✅ 2025-11-10
+- [x] DEPLOY1: Developer deploys to Scaleway in <5min (vs manual local setup) ✅ 2025-11-10
 
 ## In Progress
-- [⏳] DEPLOY1: Developer deploys to Scaleway in <5min (vs manual local setup)
-- [⏳] TEST1: Parent filtering verified through integration tests (vs unit-only coverage)
 
 ## Blocked
 - [🚫] LAYER1.1: User controls z-order stacking (bring to front, send to back) ⚠️ Web SDK only
@@ -33,5 +34,4 @@
 
 ## Planned
 - [ ] TECH3: Developer adds complex items via builder pattern (vs 9-parameter functions)
-- [ ] TECH4: System validates sort_by values explicitly (vs silent failures)
 - [ ] TECH5: Developer adds new tools without modifying routing (vs hardcoded match)
