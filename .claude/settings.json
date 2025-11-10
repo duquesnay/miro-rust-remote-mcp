@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "miro-mcp-server": {
+    "miro-rust": {
       "command": "/Users/guillaume/miro-mcp-server/target/release/miro-mcp-server",
       "args": [],
       "env": {}

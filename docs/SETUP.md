@@ -39,10 +39,10 @@ Note the absolute path to the binary - you'll need it for configuration.
 
 ```bash
 # Create config directory
-mkdir -p ~/.config/mcp/miro-mcp-server
+mkdir -p ~/.config/mcp/miro-rust
 
 # Create config file
-nano ~/.config/mcp/miro-mcp-server/config.json
+nano ~/.config/mcp/miro-rust/config.json
 ```
 
 **Configuration content:**
@@ -80,7 +80,7 @@ Edit your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "miro-mcp-server": {
+    "miro-rust": {
       "command": "/absolute/path/to/miro-rust-remote-mcp/target/release/miro-mcp-server",
       "args": [],
       "env": {}
@@ -95,7 +95,7 @@ Example for macOS:
 ```json
 {
   "mcpServers": {
-    "miro-mcp-server": {
+    "miro-rust": {
       "command": "/Users/yourname/dev/miro-rust-remote-mcp/target/release/miro-mcp-server",
       "args": [],
       "env": {}
@@ -131,7 +131,7 @@ Add to your MCP settings:
 ```json
 {
   "mcpServers": {
-    "miro-mcp-server": {
+    "miro-rust": {
       "command": "/absolute/path/to/miro-rust-remote-mcp/target/release/miro-mcp-server",
       "args": [],
       "env": {}
@@ -231,7 +231,7 @@ Once configured, Claude can use these Miro operations:
 
 Ensure config exists:
 ```bash
-ls -la ~/.config/mcp/miro-mcp-server/config.json
+ls -la ~/.config/mcp/miro-rust/config.json
 ```
 
 If missing, recreate following Step 2.
@@ -249,7 +249,7 @@ chmod +x /path/to/miro-mcp-server/target/release/miro-mcp-server
 
 ### "Authentication failed"
 
-1. Verify `client_id` and `client_secret` in `~/.config/mcp/miro-mcp-server/config.json`
+1. Verify `client_id` and `client_secret` in `~/.config/mcp/miro-rust/config.json`
 2. Ensure `redirect_uri` matches exactly: `http://localhost:3010/oauth/callback`
 3. Check Miro Developer Portal that redirect URI is registered
 4. Restart authentication: remove `~/.miro-mcp/tokens.enc` and re-run `start_auth`
@@ -262,7 +262,7 @@ Ensure `encryption_key` is exactly 64 hex characters (32 bytes):
 openssl rand -hex 32
 
 # Update in config.json
-nano ~/.config/mcp/miro-mcp-server/config.json
+nano ~/.config/mcp/miro-rust/config.json
 ```
 
 ### Server not appearing in Claude

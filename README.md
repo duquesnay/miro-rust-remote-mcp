@@ -40,19 +40,19 @@ Create the configuration directory and file:
 
 ```bash
 # Create config directory
-mkdir -p ~/.config/mcp/miro-mcp-server
+mkdir -p ~/.config/mcp/miro-rust
 
 # Copy example config
-cp config.example.json ~/.config/mcp/miro-mcp-server/config.json
+cp config.example.json ~/.config/mcp/miro-rust/config.json
 
 # Generate encryption key
 openssl rand -hex 32
 
 # Edit config.json with your credentials
-nano ~/.config/mcp/miro-mcp-server/config.json
+nano ~/.config/mcp/miro-rust/config.json
 ```
 
-Configuration file (`~/.config/mcp/miro-mcp-server/config.json`):
+Configuration file (`~/.config/mcp/miro-rust/config.json`):
 
 ```json
 {
@@ -210,21 +210,21 @@ git merge feat/feature-name
 ## Deployment
 
 ### Local Development
-1. Configure `~/.config/mcp/miro-mcp-server/config.json` with localhost redirect URI
+1. Configure `~/.config/mcp/miro-rust/config.json` with localhost redirect URI
 2. Run `cargo run`
 3. OAuth callback works on localhost:3010
 
 ### Production (HTTPS Required)
 1. Deploy to hosting platform (Fly.io, Railway, or VPS)
 2. Configure HTTPS/TLS certificate
-3. Update redirect URI in `~/.config/mcp/miro-mcp-server/config.json` and Miro Developer Portal
+3. Update redirect URI in `~/.config/mcp/miro-rust/config.json` and Miro Developer Portal
 4. Deploy with `cargo build --release`
 
 **Configuration on Production Server:**
 ```bash
 # On your production server
-mkdir -p ~/.config/mcp/miro-mcp-server
-nano ~/.config/mcp/miro-mcp-server/config.json
+mkdir -p ~/.config/mcp/miro-rust
+nano ~/.config/mcp/miro-rust/config.json
 
 # Add your production configuration with HTTPS redirect URI:
 # "redirect_uri": "https://your-domain.com/oauth/callback"
@@ -266,19 +266,19 @@ All in <5 minutes via natural language!
 ## Troubleshooting
 
 ### "Configuration file not found"
-- Ensure config directory exists: `mkdir -p ~/.config/mcp/miro-mcp-server`
-- Copy example config: `cp config.example.json ~/.config/mcp/miro-mcp-server/config.json`
-- Edit config with your credentials: `nano ~/.config/mcp/miro-mcp-server/config.json`
+- Ensure config directory exists: `mkdir -p ~/.config/mcp/miro-rust`
+- Copy example config: `cp config.example.json ~/.config/mcp/miro-rust/config.json`
+- Edit config with your credentials: `nano ~/.config/mcp/miro-rust/config.json`
 
 ### "Authentication failed"
-- Check `client_id` and `client_secret` in `~/.config/mcp/miro-mcp-server/config.json`
+- Check `client_id` and `client_secret` in `~/.config/mcp/miro-rust/config.json`
 - Verify `redirect_uri` matches Miro app configuration exactly
 - Check token hasn't expired (refresh should be automatic)
 
 ### "Token encryption failed"
 - Ensure `encryption_key` is exactly 64 hex characters (32 bytes)
 - Generate new key: `openssl rand -hex 32`
-- Update it in `~/.config/mcp/miro-mcp-server/config.json`
+- Update it in `~/.config/mcp/miro-rust/config.json`
 
 ### "Rate limit exceeded"
 - Miro API limit: 100 requests/minute

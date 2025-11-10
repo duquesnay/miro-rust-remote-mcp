@@ -287,7 +287,7 @@ impl ServerHandler for MiroMcpServer {
                 ..Default::default()
             },
             server_info: Implementation {
-                name: "miro-mcp-server".into(),
+                name: "miro-rust".into(),
                 version: "0.1.0".into(),
             },
             instructions: Some("Miro MCP Server - OAuth2-enabled Miro board manipulation".into()),

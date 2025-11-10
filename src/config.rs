@@ -63,7 +63,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load configuration from file at ~/.config/mcp/miro-mcp-server/config.json
+    /// Load configuration from file at ~/.config/mcp/miro-rust/config.json
     pub fn from_file() -> Result<Self, ConfigError> {
         let config_path = Self::get_config_path()?;
 
@@ -72,8 +72,8 @@ impl Config {
             path: config_path.display().to_string(),
             reason: format!(
                 "{}. Create the config directory and file:\n\
-                     mkdir -p ~/.config/mcp/miro-mcp-server\n\
-                     cp config.example.json ~/.config/mcp/miro-mcp-server/config.json\n\
+                     mkdir -p ~/.config/mcp/miro-rust\n\
+                     cp config.example.json ~/.config/mcp/miro-rust/config.json\n\
                      Then edit the file with your Miro OAuth2 credentials.",
                 e
             ),
@@ -96,12 +96,12 @@ impl Config {
         })
     }
 
-    /// Get the configuration file path: ~/.config/mcp/miro-mcp-server/config.json
+    /// Get the configuration file path: ~/.config/mcp/miro-rust/config.json
     fn get_config_path() -> Result<PathBuf, ConfigError> {
         let config_dir = dirs::home_dir()
-            .map(|home| home.join(".config/mcp/miro-mcp-server"))
+            .map(|home| home.join(".config/mcp/miro-rust"))
             .ok_or_else(|| ConfigError::FileNotFound {
-                path: "~/.config/mcp/miro-mcp-server/config.json".to_string(),
+                path: "~/.config/mcp/miro-rust/config.json".to_string(),
                 reason: "Could not determine home directory".to_string(),
             })?;
 
@@ -111,9 +111,9 @@ impl Config {
     /// Ensure configuration directory exists (creates if needed)
     pub fn ensure_config_dir() -> Result<PathBuf, ConfigError> {
         let config_dir = dirs::home_dir()
-            .map(|home| home.join(".config/mcp/miro-mcp-server"))
+            .map(|home| home.join(".config/mcp/miro-rust"))
             .ok_or_else(|| ConfigError::FileNotFound {
-                path: "~/.config/mcp/miro-mcp-server".to_string(),
+                path: "~/.config/mcp/miro-rust".to_string(),
                 reason: "Could not determine home directory".to_string(),
             })?;
 
