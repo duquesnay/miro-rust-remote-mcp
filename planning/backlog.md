@@ -24,7 +24,8 @@
 - [x] TECH2: Developer modifies parent construction in single location (vs 5 duplications) ✅ 2025-11-10
 - [x] TEST1: Parent filtering verified through integration tests (vs unit-only coverage) ✅ 2025-11-10
 - [x] TECH4: System validates sort_by values explicitly (vs silent failures) ✅ 2025-11-10
-- [x] DEPLOY1: Developer deploys to Scaleway in <5min (vs manual local setup) ✅ 2025-11-10
+- [x] DEPLOY1: Developer deploys to Scaleway Containers in <5min (vs manual local setup) ✅ 2025-11-10
+  - Note: Implemented Containers; Functions deployment tracked in DEPLOY2
 - [x] CI1: Developer receives automated test feedback on every push (vs manual local testing) ✅ 2025-11-10
 - [x] TECH3: Developer adds complex items via builder pattern (vs 9-parameter functions) ✅ 2025-11-10
 - [x] TECH5: Developer adds new tools without modifying routing (vs hardcoded match) ✅ 2025-11-10
@@ -33,7 +34,7 @@
 
 ## In Progress
 
-- [ ] **AUTH5**: User's access token stored in encrypted cookies (vs server-side storage)
+- [ ] **AUTH5**: User's access token stored in encrypted cookies (vs server-side storage) - See Planned section for details
 
 ## Blocked
 - [🚫] LAYER1.1: User controls z-order stacking (bring to front, send to back) ⚠️ Web SDK only
@@ -55,19 +56,32 @@
   - **Dependencies**: AUTH4 (cookie encryption infrastructure)
   - **Complexity**: 1.5 (builds on AUTH4 pattern)
 
-### High Priority (Production Readiness)
+### High Priority (Production Readiness - Scaleway Functions)
 
-- [ ] **DEPLOY2**: Serverless platform configured for Pattern B architecture
-  - **Outcome**: Production deployment infrastructure ready with cost-effective serverless platform
+- [ ] **DEPLOY2**: System deploys to Scaleway Serverless Functions successfully
+  - **Outcome**: Production infrastructure configured for stateless serverless architecture
   - **Acceptance Criteria**:
-    - Evaluate AWS Lambda vs Cloudflare Workers vs Vercel Functions
-    - Document cost comparison for 1-100 users scale
-    - Set up basic deployment pipeline
-    - Configure environment variables (CLIENT_ID, SECRET, ENCRYPTION_KEY)
-    - Verify HTTPS certificate configuration
-    - Test cold start performance (<500ms)
+    - Create scaleway-functions.yaml deployment manifest
+    - Configure 256MB RAM, 30s timeout, scale 0→2 per framing.md
+    - Deploy Rust binary with <300ms cold start
+    - Verify HTTPS certificate auto-configuration
+    - Test OAuth2 redirect URI (https://[function-name].functions.scw.cloud/...)
+    - Validate function responds to MCP protocol requests
   - **Dependencies**: AUTH4, AUTH5 (stateless implementation complete)
-  - **Complexity**: 1.5 (deployment setup)
+  - **Complexity**: 1.5 (platform deployment)
+  - **Note**: Platform choice made 2025-11-10 (see framing.md); DEPLOY1 implemented Containers (now deprecated)
+
+- [ ] **SEC1**: Developer configures secrets securely via Scaleway Secret Manager
+  - **Outcome**: Sensitive credentials isolated from application code and logs
+  - **Acceptance Criteria**:
+    - Store MIRO_CLIENT_SECRET in Secret Manager
+    - Store TOKEN_ENCRYPTION_KEY in Secret Manager
+    - Configure function to access secrets at runtime via environment injection
+    - Verify secrets never logged or exposed in function output
+    - Document secret rotation procedure
+    - Test secret access from cold-start function
+  - **Dependencies**: DEPLOY2 (functions infrastructure ready)
+  - **Complexity**: 1.0 (secret management setup)
 
 - [ ] **TEST2**: Stateless authentication verified through comprehensive integration tests
   - **Outcome**: Prevent regressions in security-critical stateless cookie implementation
@@ -83,15 +97,16 @@
 
 ### Medium Priority (Operational Excellence)
 
-- [ ] **DEPLOY3**: Developer monitors production auth via structured logs and CloudWatch queries
+- [ ] **OBS1**: Developer monitors production OAuth2 flow via Scaleway Cockpit
   - **Outcome**: Audit trail and debugging capability for authentication events
   - **Acceptance Criteria**:
-    - Implement structured logging for auth events (initiate, callback, refresh)
-    - Log session IDs for audit trail
-    - Set up CloudWatch Insights queries (failed auth, token refresh rate)
-    - Document emergency revocation procedure
-    - Create dashboard for auth metrics
-  - **Dependencies**: DEPLOY2 (serverless platform configured)
+    - Implement structured logging for auth events (initiate, callback, refresh, errors)
+    - Log session/request IDs for correlation across function invocations
+    - Configure Cockpit log collection from Serverless Functions
+    - Create Cockpit queries for: failed auth, token refresh rate, error patterns
+    - Document emergency debugging procedures (e.g., trace failed auth by user)
+    - Test log visibility during OAuth2 flow (authorize → callback → token use)
+  - **Dependencies**: DEPLOY2 (Cockpit available for functions)
   - **Complexity**: 1.0 (observability setup)
 
 ### Documentation
@@ -106,4 +121,17 @@
     - Document migration path to database (if needed >100 users)
     - Link to ADR-001 and industry references
   - **Dependencies**: AUTH4, AUTH5 (implementation complete)
+  - **Complexity**: 0.5 (documentation only)
+
+- [ ] **DOC2**: Developer understands Scaleway Functions deployment and operations
+  - **Outcome**: Clear deployment documentation for production maintenance
+  - **Acceptance Criteria**:
+    - Document Scaleway Functions deployment steps (from source to running function)
+    - Explain stateless architecture compatibility (ADR-001 Pattern B + Functions)
+    - Document secret management via Scaleway Secret Manager
+    - Provide Cockpit query examples for troubleshooting auth issues
+    - Document cold start mitigation strategies (if needed)
+    - Include cost monitoring guidance ($1-5/month target per framing.md)
+    - Link to Scaleway Functions best practices
+  - **Dependencies**: DEPLOY2, SEC1, OBS1 (production stack complete)
   - **Complexity**: 0.5 (documentation only)
