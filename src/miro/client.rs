@@ -57,6 +57,11 @@ impl MiroClient {
         })
     }
 
+    /// Helper to construct Parent from optional parent_id
+    fn make_parent(parent_id: Option<String>) -> Option<Parent> {
+        parent_id.map(|id| Parent { id })
+    }
+
     /// Get a valid access token, refreshing if necessary
     async fn get_valid_token(&self) -> Result<String, MiroError> {
         let token_store = self.token_store.read().await;
@@ -154,7 +159,7 @@ impl MiroClient {
                 width: 200.0,
                 height: None,
             },
-            parent: parent_id.map(|id| Parent { id }),
+            parent: Self::make_parent(parent_id),
         };
         let json_body = serde_json::to_value(&request_body)?;
         let path = format!("/boards/{}/sticky_notes", board_id);
@@ -197,7 +202,7 @@ impl MiroClient {
             style: shape_style,
             position,
             geometry,
-            parent: parent_id.map(|id| Parent { id }),
+            parent: Self::make_parent(parent_id),
         };
 
         let json_body = serde_json::to_value(&request_body)?;
@@ -224,7 +229,7 @@ impl MiroClient {
                 width,
                 height: None,
             },
-            parent: parent_id.map(|id| Parent { id }),
+            parent: Self::make_parent(parent_id),
         };
         let json_body = serde_json::to_value(&request_body)?;
         let path = format!("/boards/{}/texts", board_id);
@@ -264,7 +269,7 @@ impl MiroClient {
             style: frame_style,
             position,
             geometry,
-            parent: parent_id.map(|id| Parent { id }),
+            parent: Self::make_parent(parent_id),
         };
 
         let json_body = serde_json::to_value(&request_body)?;
@@ -365,7 +370,7 @@ impl MiroClient {
             data,
             style,
             geometry,
-            parent: parent_id.map(|id| Parent { id }),
+            parent: Self::make_parent(parent_id),
         };
 
         let json_body = serde_json::to_value(&request_body)?;
