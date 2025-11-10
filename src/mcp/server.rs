@@ -2,11 +2,10 @@ use crate::auth::{MiroOAuthClient, TokenStore};
 use crate::config::Config;
 use crate::miro::MiroClient;
 use rmcp::{
-    handler::server::tool::ToolRouter, model::*, tool, tool_router, ErrorData as McpError,
-    ServerHandler,
+    handler::server::tool::ToolRouter, model::*, service::RequestContext, tool, tool_router,
+    ErrorData as McpError, RoleServer, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
-use std::future::Future;
 use std::sync::Arc;
 
 /// Parameters for creating a sticky note
@@ -289,8 +288,49 @@ impl ServerHandler for MiroMcpServer {
             server_info: Implementation {
                 name: "miro-rust".into(),
                 version: "0.1.0".into(),
+                title: None,
+                icons: None,
+                website_url: None,
             },
             instructions: Some("Miro MCP Server - OAuth2-enabled Miro board manipulation".into()),
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        _params: Option<PaginatedRequestParam>,
+        _ctx: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        // Return all tools from the tool_router
+        Ok(ListToolsResult {
+            tools: self.tool_router.list_all(),
+            next_cursor: None,
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        params: CallToolRequestParam,
+        _ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        // Delegate to the individual tool methods based on the tool name
+        match params.name.as_ref() {
+            "start_auth" => self.start_auth().await,
+            "list_boards" => self.list_boards().await,
+            "create_board" => self.create_board().await,
+            "create_sticky_note" => self.create_sticky_note().await,
+            "create_shape" => self.create_shape().await,
+            "create_text" => self.create_text().await,
+            "create_frame" => self.create_frame().await,
+            "list_items" => self.list_items().await,
+            "update_item" => self.update_item().await,
+            "delete_item" => self.delete_item().await,
+            "create_connector" => self.create_connector().await,
+            "bulk_create_items" => self.bulk_create_items().await,
+            _ => Err(McpError::internal_error(
+                format!("Unknown tool: {}", params.name.as_ref()),
+                None,
+            )),
         }
     }
 }

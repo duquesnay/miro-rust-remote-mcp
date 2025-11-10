@@ -1,5 +1,5 @@
 use miro_mcp_server::{Config, MiroMcpServer};
-use rmcp::handler::server::router::Router;
+use rmcp::transport::stdio;
 use rmcp::ServiceExt;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -27,13 +27,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create MCP server
     let mcp_server = MiroMcpServer::new(&config)?;
-    let router = Router::new(mcp_server);
 
     info!("MCP server initialized");
 
-    // Run server with stdio transport
-    let transport = rmcp::transport::stdio();
-    router.serve(transport).await?;
+    // Run server with stdio transport and wait
+    let service = mcp_server.serve(stdio()).await?;
+    service.waiting().await?;
 
     Ok(())
 }

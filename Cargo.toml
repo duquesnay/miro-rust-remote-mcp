@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.42", features = ["full"] }
-rmcp = { version = "0.3", features = ["server", "transport-io", "macros"] }
+rmcp = { version = "0.8", features = ["server", "transport-io", "macros"] }
 oauth2 = "4.4"
 url = "2.5"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
