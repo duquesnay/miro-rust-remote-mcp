@@ -15,7 +15,18 @@
 - [x] REL1: User connects items with styled arrows/lines ✅ 2025-11-10
 - [x] REL2: User adds captions to connectors ✅ 2025-11-10
 - [x] BULK1: User creates multiple items efficiently (vs individual API calls) ✅ 2025-11-10
+- [x] TECH1: MCP server responds to protocol requests (vs crashing on tools/list) ✅ 2025-11-10
+- [x] LAYER2: User understands item stacking order when reading/creating items ✅ 2025-11-10
+- [x] FRAME1: User creates items directly in frames (vs manual move after creation) ✅ 2025-11-10
+- [x] FRAME2: User moves items between frames for reorganization ✅ 2025-11-10
+- [x] FRAME3: User filters items by containing frame ✅ 2025-11-10
+- [x] FRAME4: User removes items from frames to board root ✅ 2025-11-10
 
 ## In Progress
+- [⏳] DEPLOY1: Developer deploys to Scaleway in <5min (vs manual local setup)
+
+## Blocked
+- [🚫] LAYER1.1: User controls z-order stacking (bring to front, send to back) ⚠️ Web SDK only
+- [🚫] LAYER1.2: User manages organizational layers (visibility, locking) ⚠️ UI-only feature
 
 ## Planned

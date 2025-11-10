@@ -313,3 +313,30 @@
 - Useful for standalone labels
 
 **Source**: PROJECT_REQUIREMENTS
+
+---
+
+### DEPLOY1: Developer deploys to Scaleway in <5min (vs manual local setup)
+
+**User**: Developer deploying Miro MCP server to production
+**Outcome**: Container deployed to Scaleway Container Registry with automated configuration
+**Context**: Currently requires manual local setup, environment configuration, and no production deployment option
+
+**Acceptance Criteria**:
+- Dockerfile builds MCP server successfully
+- Container pushed to Scaleway Container Registry
+- Environment variables (MIRO_CLIENT_ID, MIRO_CLIENT_SECRET) configurable via Scaleway secrets
+- Container runs MCP server accessible via network
+- Deployment documented with single-command setup
+- Health check endpoint responds correctly
+- OAuth redirect URI configured for production domain
+
+**Implementation Notes**:
+- Use scaleway-deployment skill for Scaleway-specific setup
+- Follow Scaleway Container best practices
+- Consider using Scaleway Serverless Containers for auto-scaling
+- Token storage needs persistent volume or Scaleway Object Storage
+
+**Source**: USER_REQUEST
+
+---
