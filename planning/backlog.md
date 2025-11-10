@@ -31,10 +31,15 @@
 - [x] TECH5: Developer adds new tools without modifying routing (vs hardcoded match) ✅ 2025-11-10
 - [x] AUTH3: User completes OAuth flow in browser from Claude Desktop (vs manual token management) ✅ 2025-11-10
 - [x] AUTH4: Developer adds OAuth state via encrypted cookies (vs in-memory HashMap) ✅ 2025-11-10
+- [x] AUTH5: User's access token stored in encrypted cookies (vs server-side storage) ✅ 2025-11-10
+  - Note: Implemented but superseded by ADR-002 (Resource Server pattern)
 
 ## In Progress
 
-- [ ] **AUTH5**: User's access token stored in encrypted cookies (vs server-side storage) - See Planned section for details
+- [ ] **AUTH6**: Claude discovers OAuth via metadata endpoint (vs manual configuration)
+  - **Pattern**: Resource Server (ADR-002)
+  - **Dependencies**: None (first step)
+  - **Complexity**: 0.5 (simple endpoint)
 
 ## Blocked
 - [🚫] LAYER1.1: User controls z-order stacking (bring to front, send to back) ⚠️ Web SDK only
@@ -42,19 +47,49 @@
 
 ## Planned
 
-### Critical (ADR-001 Implementation - Blocks Serverless Deployment)
+### Critical (ADR-002 Implementation - Resource Server Pattern)
 
-- [ ] **AUTH5**: User's access token stored in encrypted cookies (vs server-side storage)
-  - **Outcome**: System remains stateless and secure with cookie-based token storage
+- [ ] **AUTH6**: Claude discovers OAuth via metadata endpoint (vs manual configuration)
+  - **Outcome**: Claude auto-detects Miro OAuth and initiates flow automatically
   - **Acceptance Criteria**:
-    - Store access token in encrypted httpOnly cookie
-    - Set 1-hour expiration matching token lifetime
-    - Implement Secure and SameSite=strict attributes
-    - Clear oauth_state cookie after successful exchange
-    - Middleware extracts and validates token from cookie
-    - Test token theft protection (XSS, CSRF scenarios)
-  - **Dependencies**: AUTH4 (cookie encryption infrastructure)
-  - **Complexity**: 1.5 (builds on AUTH4 pattern)
+    - Implement `GET /.well-known/oauth-protected-resource` endpoint
+    - Return Miro OAuth server metadata per RFC 9728
+    - Test metadata discovery with curl
+  - **Dependencies**: None
+  - **Complexity**: 0.5 (simple endpoint)
+
+- [ ] **AUTH7**: Server extracts Bearer tokens from Authorization header (vs cookies)
+  - **Outcome**: MCP requests authenticated via standard Bearer token pattern
+  - **Acceptance Criteria**:
+    - Extract token from `Authorization: Bearer <token>` header
+    - Validate header format (reject invalid formats)
+    - Return 401 Unauthorized if header missing
+    - Test with valid/invalid headers
+  - **Dependencies**: AUTH6
+  - **Complexity**: 0.5 (token extraction)
+
+- [ ] **AUTH8**: Server validates tokens with Miro introspection API (vs trusting Claude)
+  - **Outcome**: User identity known for audit logging and security
+  - **Acceptance Criteria**:
+    - Call `GET https://api.miro.com/v1/oauth-token` with Bearer token
+    - Parse user info (user_id, team_id, scopes)
+    - Return 401 for invalid/expired tokens
+    - Log user_id for each request
+    - Test with valid/invalid/expired tokens
+  - **Dependencies**: AUTH7
+  - **Complexity**: 1.0 (API integration)
+
+- [ ] **AUTH9**: Token validation cached with 5-minute TTL (vs 100ms latency per request)
+  - **Outcome**: 95% reduction in validation latency (100ms → <1ms)
+  - **Acceptance Criteria**:
+    - Implement LRU cache (100 token capacity)
+    - Cache validated user info for 5 minutes
+    - First request: validate with Miro (cache miss)
+    - Subsequent requests: serve from cache (cache hit)
+    - Test cache hit/miss scenarios
+    - Measure latency improvement
+  - **Dependencies**: AUTH8
+  - **Complexity**: 1.5 (caching logic)
 
 ### High Priority (Production Readiness - Scaleway Functions)
 

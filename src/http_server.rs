@@ -1,6 +1,7 @@
 use crate::auth::{
     CookieStateManager, CookieTokenManager, MiroOAuthClient, OAuthCookieState, OAuthTokenCookie,
 };
+use crate::mcp::oauth_metadata;
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
@@ -262,6 +263,7 @@ pub fn create_app(
 
     Router::new()
         .route("/health", get(health_check))
+        .route("/.well-known/oauth-protected-resource", get(oauth_metadata))
         .route("/oauth/authorize", get(oauth_authorize))
         .route("/oauth/callback", get(oauth_callback))
         .with_state(state)
