@@ -15,9 +15,15 @@ Cargo.lock
 .DS_Store
 
 # Environment
+# Local development config (contains actual credentials - never commit)
 .env
 .env.local
+
+# Environment-specific local overrides (never commit)
 .env.*.local
+
+# Template files are tracked in git:
+# .env.production (Scaleway template - safe to commit)
 
 # Secrets (CRITICAL - never commit)
 secrets/

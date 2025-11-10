@@ -28,6 +28,7 @@
 - [x] CI1: Developer receives automated test feedback on every push (vs manual local testing) ✅ 2025-11-10
 - [x] TECH3: Developer adds complex items via builder pattern (vs 9-parameter functions) ✅ 2025-11-10
 - [x] TECH5: Developer adds new tools without modifying routing (vs hardcoded match) ✅ 2025-11-10
+- [x] AUTH3: User completes OAuth flow in browser from Claude Desktop (vs manual token management) ✅ 2025-11-10
 
 ## In Progress
 

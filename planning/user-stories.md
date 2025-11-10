@@ -47,6 +47,33 @@
 
 ---
 
+### AUTH3: User completes OAuth flow in browser from Claude Desktop (vs manual token management)
+
+**User**: Human user connecting Claude Desktop to Miro
+**Outcome**: Seamlessly authorizes access through browser OAuth flow without manual token handling
+**Context**: Claude Desktop requires local HTTP server for OAuth callback handling
+
+**Acceptance Criteria**:
+- HTTP server runs on localhost:3010 for OAuth callbacks
+- `start_auth` MCP tool generates authorization URL
+- User clicks URL, opens browser, authorizes on Miro
+- Miro redirects to http://localhost:3010/oauth/callback?code=xxx
+- HTTP server exchanges code for tokens automatically
+- Tokens saved to encrypted storage
+- Success/error feedback displayed in browser
+- MCP server uses saved tokens for subsequent API calls
+
+**Implementation Notes**:
+- Concurrent server architecture: stdio MCP + HTTP OAuth server
+- HTTP server spawned in background tokio task
+- Shared OAuth client and token store between servers
+- Beautiful HTML pages for user feedback
+- Docker port mapping: -p 3010:3010 for callback access
+
+**Source**: VAULT_SERVER_OAUTH_LEARNINGS
+
+---
+
 ### BOARD1: User lists accessible Miro boards programmatically
 
 **User**: Claude AI assistant helping user find existing Miro boards

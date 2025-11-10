@@ -23,7 +23,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
-        libssl3 && \
+        libssl3 \
+        curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -45,13 +46,17 @@ USER mcp
 # Environment variables (override via Scaleway secrets)
 ENV RUST_LOG=info
 ENV TOKEN_STORAGE_PATH=/app/data/tokens.enc
+ENV MCP_SERVER_PORT=3010
+
+# Expose HTTP port for OAuth callbacks
+EXPOSE 3010
 
 # Volume for persistent token storage
 VOLUME ["/app/data"]
 
-# Health check endpoint (will be implemented)
+# Health check using HTTP server endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD test -f /app/miro-mcp-server || exit 1
+    CMD curl -f http://localhost:3010/health || exit 1
 
-# Run MCP server
+# Run MCP server (stdio for MCP + HTTP for OAuth)
 CMD ["/app/miro-mcp-server"]

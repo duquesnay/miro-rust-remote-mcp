@@ -1,6 +1,8 @@
-use miro_mcp_server::{Config, MiroMcpServer};
+use miro_mcp_server::{Config, MiroMcpServer, MiroOAuthClient, TokenStore};
 use rmcp::transport::stdio;
 use rmcp::ServiceExt;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -25,12 +27,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env_or_file()?;
     info!("Configuration loaded successfully");
 
+    // Create shared OAuth components for HTTP server
+    let oauth_client = Arc::new(MiroOAuthClient::new(&config)?);
+    let token_store = Arc::new(RwLock::new(TokenStore::new(config.encryption_key)?));
+
+    // Start OAuth HTTP server in background task
+    let http_oauth_client = Arc::clone(&oauth_client);
+    let http_token_store = Arc::clone(&token_store);
+    let http_port = config.port;
+
+    tokio::spawn(async move {
+        if let Err(e) = miro_mcp_server::run_server(http_port, http_oauth_client, http_token_store).await {
+            eprintln!("HTTP server error: {}", e);
+        }
+    });
+
+    info!("OAuth HTTP server started on port {}", http_port);
+
     // Create MCP server
     let mcp_server = MiroMcpServer::new(&config)?;
-
     info!("MCP server initialized");
 
-    // Run server with stdio transport and wait
+    // Run MCP server with stdio transport and wait
     let service = mcp_server.serve(stdio()).await?;
     service.waiting().await?;
 
