@@ -33,13 +33,10 @@
 - [x] AUTH4: Developer adds OAuth state via encrypted cookies (vs in-memory HashMap) ✅ 2025-11-10
 - [x] AUTH5: User's access token stored in encrypted cookies (vs server-side storage) ✅ 2025-11-10
   - Note: Implemented but superseded by ADR-002 (Resource Server pattern)
+- [x] AUTH6: Claude discovers OAuth via metadata endpoint (vs manual configuration) ✅ 2025-11-10
+- [x] AUTH7: Server extracts Bearer tokens from Authorization header (vs cookies) ✅ 2025-11-10
 
 ## In Progress
-
-- [ ] **AUTH6**: Claude discovers OAuth via metadata endpoint (vs manual configuration)
-  - **Pattern**: Resource Server (ADR-002)
-  - **Dependencies**: None (first step)
-  - **Complexity**: 0.5 (simple endpoint)
 
 ## Blocked
 - [🚫] LAYER1.1: User controls z-order stacking (bring to front, send to back) ⚠️ Web SDK only
@@ -48,25 +45,6 @@
 ## Planned
 
 ### Critical (ADR-002 Implementation - Resource Server Pattern)
-
-- [ ] **AUTH6**: Claude discovers OAuth via metadata endpoint (vs manual configuration)
-  - **Outcome**: Claude auto-detects Miro OAuth and initiates flow automatically
-  - **Acceptance Criteria**:
-    - Implement `GET /.well-known/oauth-protected-resource` endpoint
-    - Return Miro OAuth server metadata per RFC 9728
-    - Test metadata discovery with curl
-  - **Dependencies**: None
-  - **Complexity**: 0.5 (simple endpoint)
-
-- [ ] **AUTH7**: Server extracts Bearer tokens from Authorization header (vs cookies)
-  - **Outcome**: MCP requests authenticated via standard Bearer token pattern
-  - **Acceptance Criteria**:
-    - Extract token from `Authorization: Bearer <token>` header
-    - Validate header format (reject invalid formats)
-    - Return 401 Unauthorized if header missing
-    - Test with valid/invalid headers
-  - **Dependencies**: AUTH6
-  - **Complexity**: 0.5 (token extraction)
 
 - [ ] **AUTH8**: Server validates tokens with Miro introspection API (vs trusting Claude)
   - **Outcome**: User identity known for audit logging and security
@@ -91,20 +69,20 @@
   - **Dependencies**: AUTH8
   - **Complexity**: 1.5 (caching logic)
 
-### High Priority (Production Readiness - Scaleway Functions)
+### High Priority (Production Readiness - Scaleway Containers)
 
-- [ ] **DEPLOY2**: System deploys to Scaleway Serverless Functions successfully
-  - **Outcome**: Production infrastructure configured for stateless serverless architecture
+- [ ] **DEPLOY2**: System deploys to Scaleway Containers successfully
+  - **Outcome**: Production infrastructure configured for stateless container architecture
   - **Acceptance Criteria**:
-    - Create scaleway-functions.yaml deployment manifest
-    - Configure 256MB RAM, 30s timeout, scale 0→2 per framing.md
-    - Deploy Rust binary with <300ms cold start
+    - Create Dockerfile for Rust MCP server
+    - Configure container with persistent in-memory LRU cache
+    - Deploy to Scaleway Containers with HTTPS
     - Verify HTTPS certificate auto-configuration
-    - Test OAuth2 redirect URI (https://[function-name].functions.scw.cloud/...)
-    - Validate function responds to MCP protocol requests
-  - **Dependencies**: AUTH4, AUTH5 (stateless implementation complete)
+    - Test OAuth2 redirect URI (https://[container-name].containers.scw.cloud/...)
+    - Validate container responds to MCP protocol requests
+  - **Dependencies**: AUTH8, AUTH9 (token validation with caching complete)
   - **Complexity**: 1.5 (platform deployment)
-  - **Note**: Platform choice made 2025-11-10 (see framing.md); DEPLOY1 implemented Containers (now deprecated)
+  - **Note**: Platform choice made 2025-11-10 (see framing.md); Containers selected for LRU cache persistence
 
 - [ ] **SEC1**: Developer configures secrets securely via Scaleway Secret Manager
   - **Outcome**: Sensitive credentials isolated from application code and logs
