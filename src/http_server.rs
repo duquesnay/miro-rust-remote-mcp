@@ -1,352 +1,79 @@
-use crate::auth::{
-    extract_bearer_token, CookieStateManager, CookieTokenManager, MiroOAuthClient,
-    OAuthCookieState, OAuthTokenCookie, TokenValidator,
-};
-use crate::mcp::oauth_metadata;
+use crate::auth::{extract_bearer_token, TokenValidator};
+use crate::mcp::{oauth_metadata, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::mcp::{handle_initialize, handle_tools_list, handle_tools_call};
+use crate::auth::token_validator::UserInfo;
 use axum::{
-    extract::{Query, State},
-    http::{header, Request, StatusCode},
+    extract::State,
+    http::{Request, StatusCode},
     middleware::{self, Next},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::get,
-    Router,
+    Router, Json,
 };
-use oauth2::PkceCodeVerifier;
-use serde::Deserialize;
 use std::sync::Arc;
-use tracing::{error, info, warn};
-
-/// OAuth callback query parameters
-#[derive(Debug, Deserialize)]
-pub struct OAuthCallback {
-    code: String,
-    state: String,
-}
-
-/// Shared application state
-#[derive(Clone)]
-pub struct AppState {
-    oauth_client: Arc<MiroOAuthClient>,
-    cookie_state_manager: CookieStateManager,
-    cookie_token_manager: CookieTokenManager,
-    token_validator: Arc<TokenValidator>,
-}
-
-/// Handle OAuth callback from Miro
-async fn oauth_callback(
-    Query(params): Query<OAuthCallback>,
-    State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-) -> Response {
-    info!("Received OAuth callback with code");
-
-    match handle_oauth_exchange(params, state, headers).await {
-        Ok(token_cookie) => {
-            let mut response = Html(
-            r#"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Authorization Successful</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    }
-                    .container {
-                        background: white;
-                        padding: 3rem;
-                        border-radius: 12px;
-                        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                        text-align: center;
-                        max-width: 500px;
-                    }
-                    h1 { color: #2d3748; margin-bottom: 1rem; }
-                    p { color: #4a5568; line-height: 1.6; }
-                    .success { color: #48bb78; font-size: 3rem; margin-bottom: 1rem; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="success">✓</div>
-                    <h1>Authorization Successful!</h1>
-                    <p>Your Miro account has been connected.</p>
-                    <p>You can now close this window and return to Claude.</p>
-                </div>
-            </body>
-            </html>
-            "#
-            )
-            .into_response();
-
-            // Set token cookie
-            let cookie_header = format!("{}={}", token_cookie.name(), token_cookie.value());
-            response.headers_mut().insert(
-                header::SET_COOKIE,
-                cookie_header.parse().unwrap(),
-            );
-
-            response
-        }
-        Err(e) => {
-            error!("OAuth exchange failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Html(format!(
-                    r#"
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <title>Authorization Failed</title>
-                        <style>
-                            body {{
-                                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                                display: flex;
-                                justify-content: center;
-                                align-items: center;
-                                height: 100vh;
-                                margin: 0;
-                                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                            }}
-                            .container {{
-                                background: white;
-                                padding: 3rem;
-                                border-radius: 12px;
-                                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                                text-align: center;
-                                max-width: 500px;
-                            }}
-                            h1 {{ color: #2d3748; margin-bottom: 1rem; }}
-                            p {{ color: #4a5568; line-height: 1.6; }}
-                            .error {{ color: #f56565; font-size: 3rem; margin-bottom: 1rem; }}
-                            code {{ background: #f7fafc; padding: 0.2rem 0.4rem; border-radius: 3px; }}
-                        </style>
-                    </head>
-                    <body>
-                        <div class="container">
-                            <div class="error">✗</div>
-                            <h1>Authorization Failed</h1>
-                            <p>Error: <code>{}</code></p>
-                            <p>Please try again or contact support.</p>
-                        </div>
-                    </body>
-                    </html>
-                    "#,
-                    e
-                )),
-            )
-                .into_response()
-        }
-    }
-}
-
-/// Exchange authorization code for access token
-async fn handle_oauth_exchange(
-    params: OAuthCallback,
-    app_state: AppState,
-    headers: axum::http::HeaderMap,
-) -> Result<cookie::Cookie<'static>, Box<dyn std::error::Error>> {
-    // Extract cookie from request headers
-    let cookie_value = headers
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookies| {
-            // Parse cookies and find miro_oauth_state
-            cookies
-                .split(';')
-                .map(|c| c.trim())
-                .find(|c| c.starts_with("miro_oauth_state="))
-                .map(|c| c.strip_prefix("miro_oauth_state=").unwrap().to_string())
-        })
-        .ok_or("OAuth state cookie not found")?;
-
-    // Retrieve and validate OAuth state from cookie
-    let oauth_state = app_state
-        .cookie_state_manager
-        .retrieve_and_validate(&cookie_value, &params.state)
-        .map_err(|e| format!("Cookie validation failed: {}", e))?;
-
-    // Extract PKCE verifier
-    let pkce_verifier = PkceCodeVerifier::new(oauth_state.pkce_verifier);
-
-    // Exchange code for tokens
-    let tokens = app_state
-        .oauth_client
-        .exchange_code(params.code, pkce_verifier)
-        .await?;
-
-    // Calculate expires_in from expires_at
-    let expires_in = tokens.expires_in() as u64;
-
-    // Create token cookie
-    let token_cookie_data = OAuthTokenCookie::new(
-        tokens.access_token.clone(),
-        tokens.refresh_token.clone().unwrap_or_default(),
-        expires_in,
-    );
-
-    let token_cookie = app_state
-        .cookie_token_manager
-        .create_cookie(token_cookie_data)?;
-
-    info!("OAuth tokens stored in encrypted cookie");
-    Ok(token_cookie)
-}
-
-/// Initiate OAuth flow - creates cookie and redirects to Miro
-async fn oauth_authorize(State(state): State<AppState>) -> Response {
-    match handle_oauth_authorize(state).await {
-        Ok(response) => response,
-        Err(e) => {
-            error!("OAuth authorization failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Authorization failed: {}", e),
-            )
-                .into_response()
-        }
-    }
-}
-
-/// Generate authorization URL, create cookie, and redirect
-async fn handle_oauth_authorize(
-    app_state: AppState,
-) -> Result<Response, Box<dyn std::error::Error>> {
-    // Generate authorization URL with CSRF and PKCE
-    let (auth_url, csrf_token, pkce_verifier) = app_state
-        .oauth_client
-        .get_authorization_url()
-        .map_err(|e| format!("Failed to generate auth URL: {}", e))?;
-
-    // Create OAuth state for cookie
-    let oauth_state = OAuthCookieState::new(csrf_token, pkce_verifier);
-
-    // Create encrypted cookie
-    let cookie = app_state
-        .cookie_state_manager
-        .create_cookie(oauth_state)
-        .map_err(|e| format!("Failed to create cookie: {}", e))?;
-
-    // Build redirect response with cookie
-    let response = axum::response::Redirect::to(&auth_url);
-    let mut response = response.into_response();
-
-    // Set cookie header
-    let cookie_header = format!("{}={}", cookie.name(), cookie.value());
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        cookie_header.parse().unwrap(),
-    );
-
-    info!("Redirecting to Miro authorization URL with encrypted state cookie");
-    Ok(response)
-}
+use tracing::{info, warn, error};
 
 /// Health check endpoint
 async fn health_check() -> impl IntoResponse {
     (StatusCode::OK, "OK")
 }
 
-/// Bearer token validation middleware
+/// MCP Protocol endpoint for JSON-RPC 2.0 requests
 ///
-/// Validates Bearer tokens on all protected routes.
-/// Extracts token from Authorization header, validates with TokenValidator,
-/// and returns 401 if missing or invalid.
-async fn bearer_auth_middleware(
-    State(state): State<AppState>,
-    mut request: Request<axum::body::Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    // Extract Bearer token from Authorization header
-    let token = match extract_bearer_token(request.headers()) {
-        Ok(token) => token,
-        Err(e) => {
-            warn!("Bearer token extraction failed: {}", e);
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-    };
+/// Handles MCP methods:
+/// - initialize: Handshake and capability negotiation
+/// - tools/list: List available tools
+/// - tools/call: Execute a tool
+///
+/// Requires Bearer token authentication (provided by middleware).
+/// Token and user info are extracted from request extensions.
+async fn mcp_endpoint(
+    axum::Extension(token): axum::Extension<Arc<String>>,
+    axum::Extension(user_info): axum::Extension<Arc<UserInfo>>,
+    Json(req): Json<JsonRpcRequest>,
+) -> impl IntoResponse {
+    // Validate JSON-RPC request format
+    if let Err(e) = req.validate() {
+        error!("Invalid JSON-RPC request: {}", e);
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(JsonRpcResponse::error(
+                JsonRpcError::invalid_request(e),
+                req.id.clone(),
+            )),
+        );
+    }
 
-    // Validate token with Miro API (with caching)
-    let user_info = match state.token_validator.validate_token(&token).await {
-        Ok(user_info) => user_info,
-        Err(e) => {
-            warn!("Token validation failed: {}", e);
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-    };
-
-    // Store both token and user_info in request extensions for handlers to access
-    request.extensions_mut().insert(std::sync::Arc::new(token));
-    request.extensions_mut().insert(std::sync::Arc::new(user_info));
-
-    // Continue to handler
-    Ok(next.run(request).await)
-}
-
-/// Create and configure the HTTP server
-pub fn create_app(
-    oauth_client: Arc<MiroOAuthClient>,
-    cookie_state_manager: CookieStateManager,
-    cookie_token_manager: CookieTokenManager,
-    token_validator: Arc<TokenValidator>,
-) -> Router {
-    let state = AppState {
-        oauth_client,
-        cookie_state_manager,
-        cookie_token_manager,
-        token_validator,
-    };
-
-    // Public routes (no auth required)
-    let public_routes = Router::new()
-        .route("/health", get(health_check))
-        .route("/.well-known/oauth-protected-resource", get(oauth_metadata))
-        .route("/oauth/authorize", get(oauth_authorize))
-        .route("/oauth/callback", get(oauth_callback));
-
-    // Protected routes (require Bearer token validation)
-    let protected_routes = Router::new()
-        .route("/mcp/list_boards", axum::routing::post(crate::mcp::tools::list_boards))
-        .route("/mcp/get_board/:board_id", axum::routing::post(crate::mcp::tools::get_board))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            bearer_auth_middleware,
-        ));
-
-    // Combine routes
-    Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
-        .with_state(state)
-}
-
-/// Run the HTTP server
-pub async fn run_server(
-    port: u16,
-    oauth_client: Arc<MiroOAuthClient>,
-    cookie_state_manager: CookieStateManager,
-    cookie_token_manager: CookieTokenManager,
-    token_validator: Arc<TokenValidator>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let app = create_app(
-        oauth_client,
-        cookie_state_manager,
-        cookie_token_manager,
-        token_validator,
+    info!(
+        method = %req.method,
+        user_id = %user_info.user_id,
+        "Processing MCP request"
     );
-    let addr = format!("127.0.0.1:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    info!("OAuth HTTP server listening on {}", addr);
-    info!("OAuth callback URL: http://127.0.0.1:{}/oauth/callback", port);
+    // Route to appropriate handler
+    let response = match req.method.as_str() {
+        "initialize" => {
+            info!("Handling initialize request");
+            handle_initialize(&req, &user_info)
+        }
+        "tools/list" => {
+            info!("Handling tools/list request");
+            handle_tools_list(&req, &user_info)
+        }
+        "tools/call" => {
+            info!("Handling tools/call request");
+            handle_tools_call(&req, &user_info, &token).await
+        }
+        method => {
+            warn!(method = %method, "Unknown MCP method");
+            JsonRpcResponse::error(
+                JsonRpcError::method_not_found(method),
+                req.id.clone(),
+            )
+        }
+    };
 
-    axum::serve(listener, app).await?;
-    Ok(())
+    (StatusCode::OK, Json(response))
 }
 
 //
@@ -411,6 +138,7 @@ pub fn create_app_adr002(token_validator: Arc<TokenValidator>) -> Router {
 
     // Protected routes (Bearer token required)
     let protected_routes = Router::new()
+        .route("/mcp", axum::routing::post(mcp_endpoint))
         .route("/mcp/list_boards", axum::routing::post(crate::mcp::tools::list_boards))
         .route("/mcp/get_board/:board_id", axum::routing::post(crate::mcp::tools::get_board))
         .layer(middleware::from_fn_with_state(
@@ -452,32 +180,11 @@ pub async fn run_server_adr002(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
-
-    fn get_test_config() -> Config {
-        Config {
-            client_id: "test_client_id".to_string(),
-            client_secret: "test_client_secret".to_string(),
-            redirect_uri: "http://localhost:3010/oauth/callback".to_string(),
-            encryption_key: [0u8; 32],
-            port: 3010,
-        }
-    }
 
     #[test]
-    fn test_create_app() {
-        let config = get_test_config();
-        let oauth_client = Arc::new(MiroOAuthClient::new(&config).unwrap());
-        let cookie_state_manager = CookieStateManager::from_config(config.encryption_key);
-        let cookie_token_manager = CookieTokenManager::from_config(config.encryption_key);
+    fn test_create_app_adr002() {
         let token_validator = Arc::new(TokenValidator::new());
-
-        let app = create_app(
-            oauth_client,
-            cookie_state_manager,
-            cookie_token_manager,
-            token_validator,
-        );
+        let app = create_app_adr002(token_validator);
         assert!(std::mem::size_of_val(&app) > 0);
     }
 }
