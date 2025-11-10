@@ -152,15 +152,15 @@ impl MiroMcpServer {
     /// Start OAuth2 authentication flow
     #[tool(description = "Start OAuth2 authentication flow with Miro. Returns authorization URL.")]
     async fn start_auth(&self) -> Result<CallToolResult, McpError> {
-        let (auth_url, csrf_token) = self
-            .oauth_client
-            .get_authorization_url()
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        // Return the local OAuth authorize endpoint which will:
+        // 1. Generate PKCE verifier and CSRF token
+        // 2. Create encrypted cookie with state
+        // 3. Redirect to Miro authorization URL
+        let authorize_url = "http://127.0.0.1:3000/oauth/authorize";
 
         let message = format!(
-            "Authorization URL: {}\n\nState: {}\n\nInstructions: Open the authorization URL in your browser, authorize the application, and you will be redirected to the callback URL with a code parameter.",
-            auth_url,
-            csrf_token.secret()
+            "Authorization URL: {}\n\nInstructions: Open the authorization URL in your browser. You will be redirected to Miro to authorize the application, then back to the callback URL to complete authentication.",
+            authorize_url
         );
 
         Ok(CallToolResult::success(vec![Content::text(message)]))

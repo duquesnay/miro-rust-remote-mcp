@@ -1,4 +1,4 @@
-use miro_mcp_server::{Config, MiroMcpServer, MiroOAuthClient, TokenStore};
+use miro_mcp_server::{Config, CookieStateManager, MiroMcpServer, MiroOAuthClient, TokenStore};
 use rmcp::transport::stdio;
 use rmcp::ServiceExt;
 use std::sync::Arc;
@@ -30,14 +30,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create shared OAuth components for HTTP server
     let oauth_client = Arc::new(MiroOAuthClient::new(&config)?);
     let token_store = Arc::new(RwLock::new(TokenStore::new(config.encryption_key)?));
+    let cookie_manager = CookieStateManager::from_config(config.encryption_key);
 
     // Start OAuth HTTP server in background task
     let http_oauth_client = Arc::clone(&oauth_client);
     let http_token_store = Arc::clone(&token_store);
+    let http_cookie_manager = cookie_manager.clone();
     let http_port = config.port;
 
     tokio::spawn(async move {
-        if let Err(e) = miro_mcp_server::run_server(http_port, http_oauth_client, http_token_store).await {
+        if let Err(e) = miro_mcp_server::run_server(
+            http_port,
+            http_oauth_client,
+            http_token_store,
+            http_cookie_manager,
+        )
+        .await
+        {
             eprintln!("HTTP server error: {}", e);
         }
     });

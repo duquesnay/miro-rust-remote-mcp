@@ -5,8 +5,6 @@ use oauth2::{
     ClientSecret, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
     TokenResponse, TokenUrl,
 };
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 // Miro OAuth2 endpoints
 const MIRO_AUTH_URL: &str = "https://miro.com/oauth/authorize";
@@ -16,30 +14,6 @@ const MIRO_TOKEN_URL: &str = "https://api.miro.com/v1/oauth/token";
 #[derive(Clone)]
 pub struct MiroOAuthClient {
     client: BasicClient,
-    state_manager: Arc<Mutex<OAuthStateManager>>,
-}
-
-/// Manages OAuth state and PKCE verifiers
-#[derive(Default)]
-pub struct OAuthStateManager {
-    // Maps CSRF state -> PKCE verifier
-    states: HashMap<String, PkceCodeVerifier>,
-}
-
-impl OAuthStateManager {
-    pub fn new() -> Self {
-        Self {
-            states: HashMap::new(),
-        }
-    }
-
-    pub fn store_verifier(&mut self, state: String, verifier: PkceCodeVerifier) {
-        self.states.insert(state, verifier);
-    }
-
-    pub fn retrieve_verifier(&mut self, state: &str) -> Option<PkceCodeVerifier> {
-        self.states.remove(state)
-    }
 }
 
 impl MiroOAuthClient {
@@ -60,14 +34,12 @@ impl MiroOAuthClient {
         let client = BasicClient::new(client_id, Some(client_secret), auth_url, Some(token_url))
             .set_redirect_uri(redirect_url);
 
-        Ok(Self {
-            client,
-            state_manager: Arc::new(Mutex::new(OAuthStateManager::new())),
-        })
+        Ok(Self { client })
     }
 
     /// Generate authorization URL with PKCE and CSRF protection
-    pub fn get_authorization_url(&self) -> Result<(String, CsrfToken), AuthError> {
+    /// Returns (auth_url, csrf_token, pkce_verifier) - caller must store verifier in cookie
+    pub fn get_authorization_url(&self) -> Result<(String, CsrfToken, PkceCodeVerifier), AuthError> {
         // Generate PKCE challenge
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -80,29 +52,16 @@ impl MiroOAuthClient {
             .set_pkce_challenge(pkce_challenge)
             .url();
 
-        // Store PKCE verifier for later use
-        let mut state_manager = self
-            .state_manager
-            .lock()
-            .map_err(|e| AuthError::OAuth2Error(format!("Failed to lock state manager: {}", e)))?;
-
-        state_manager.store_verifier(csrf_token.secret().clone(), pkce_verifier);
-
-        Ok((auth_url.to_string(), csrf_token))
+        Ok((auth_url.to_string(), csrf_token, pkce_verifier))
     }
 
     /// Exchange authorization code for access token
-    pub async fn exchange_code(&self, code: String, state: String) -> Result<TokenSet, AuthError> {
-        // Retrieve and verify PKCE verifier
-        let pkce_verifier = {
-            let mut state_manager = self.state_manager.lock().map_err(|e| {
-                AuthError::OAuth2Error(format!("Failed to lock state manager: {}", e))
-            })?;
-
-            state_manager
-                .retrieve_verifier(&state)
-                .ok_or(AuthError::CsrfValidationFailed)?
-        };
+    /// Takes pkce_verifier as parameter (retrieved from cookie by caller)
+    pub async fn exchange_code(
+        &self,
+        code: String,
+        pkce_verifier: PkceCodeVerifier,
+    ) -> Result<TokenSet, AuthError> {
 
         // Exchange code for token
         let token_response = self
@@ -185,26 +144,10 @@ mod tests {
         let result = client.get_authorization_url();
         assert!(result.is_ok());
 
-        let (url, _state) = result.unwrap();
+        let (url, _csrf_token, _pkce_verifier) = result.unwrap();
         assert!(url.contains("https://miro.com/oauth/authorize"));
         assert!(url.contains("client_id=test_client_id"));
         assert!(url.contains("code_challenge"));
         assert!(url.contains("state"));
-    }
-
-    #[test]
-    fn test_state_manager() {
-        let mut manager = OAuthStateManager::new();
-        let (_, verifier) = PkceCodeChallenge::new_random_sha256();
-        let state = "test_state".to_string();
-
-        manager.store_verifier(state.clone(), verifier);
-        let retrieved = manager.retrieve_verifier(&state);
-
-        assert!(retrieved.is_some());
-
-        // Second retrieval should return None (one-time use)
-        let second_retrieval = manager.retrieve_verifier(&state);
-        assert!(second_retrieval.is_none());
     }
 }

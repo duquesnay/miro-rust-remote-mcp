@@ -5,7 +5,7 @@ pub mod mcp;
 pub mod miro;
 pub mod oauth_dcr;
 
-pub use auth::{AuthError, MiroOAuthClient, TokenSet, TokenStore};
+pub use auth::{AuthError, CookieStateManager, MiroOAuthClient, TokenSet, TokenStore};
 pub use config::Config;
 pub use http_server::{create_app, run_server};
 pub use mcp::{AuthHandler, MiroMcpServer};

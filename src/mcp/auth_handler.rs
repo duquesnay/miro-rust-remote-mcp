@@ -1,8 +1,12 @@
 use crate::auth::{MiroOAuthClient, TokenStore};
+use oauth2::PkceCodeVerifier;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// OAuth callback handler
+///
+/// Note: This handler is deprecated. OAuth callbacks are now handled by the HTTP server
+/// which manages cookie-based state. This struct is kept for backward compatibility.
 pub struct AuthHandler {
     oauth_client: Arc<MiroOAuthClient>,
     token_store: Arc<RwLock<TokenStore>>,
@@ -16,14 +20,17 @@ impl AuthHandler {
         }
     }
 
-    /// Handle OAuth callback with code and state
+    /// Handle OAuth callback with code and PKCE verifier
+    ///
+    /// Note: This method is deprecated. Use the HTTP server's /oauth/callback endpoint instead,
+    /// which handles cookie-based state management.
     pub async fn handle_callback(
         &self,
         code: String,
-        state: String,
+        pkce_verifier: PkceCodeVerifier,
     ) -> Result<String, Box<dyn std::error::Error>> {
         // Exchange code for tokens
-        let tokens = self.oauth_client.exchange_code(code, state).await?;
+        let tokens = self.oauth_client.exchange_code(code, pkce_verifier).await?;
 
         // Save tokens to encrypted storage
         let token_store = self.token_store.write().await;
