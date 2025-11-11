@@ -54,6 +54,15 @@ impl CookieManager {
         Self { cipher }
     }
 
+    /// Create a CookieManager for testing with a deterministic key
+    ///
+    /// # Security
+    /// DO NOT use this in production - only for tests
+    pub fn new_for_testing() -> Self {
+        let test_key = [42u8; 32];
+        Self::new(&test_key)
+    }
+
     /// Encrypt cookie data into a base64-encoded string
     ///
     /// # Arguments

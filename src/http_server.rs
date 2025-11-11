@@ -1,24 +1,26 @@
 use crate::auth::{extract_bearer_token, TokenValidator};
 use crate::config::Config;
-use crate::mcp::{oauth_metadata, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::mcp::{oauth_metadata, oauth_authorization_server_metadata, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
 use crate::mcp::{handle_initialize, handle_tools_list, handle_tools_call};
 use crate::auth::token_validator::UserInfo;
 use axum::{
     extract::State,
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, Method, HeaderValue},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router, Json,
 };
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use tracing::{info, warn, error};
 use uuid::Uuid;
 
 #[cfg(feature = "oauth-proxy")]
 use crate::oauth::{
-    authorize_handler, callback_handler, token_handler,
+    authorize_handler, callback_handler, token_handler, register_handler,
     cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider,
+    dcr::ClientRegistry,
 };
 
 /// Health check endpoint
@@ -124,8 +126,8 @@ async fn correlation_id_middleware(
     response
 }
 
-/// Application state for ADR-002 Resource Server with ADR-004 Proxy OAuth
-/// Includes token validation + OAuth proxy components (when stdio-mcp feature enabled)
+/// Application state for ADR-002 Resource Server with ADR-004 Proxy OAuth + DCR
+/// Includes token validation + OAuth proxy components + Dynamic Client Registration
 #[derive(Clone)]
 pub struct AppStateADR002 {
     pub token_validator: Arc<TokenValidator>,
@@ -134,6 +136,8 @@ pub struct AppStateADR002 {
     pub oauth_provider: Arc<MiroOAuthProvider>,
     #[cfg(feature = "oauth-proxy")]
     pub cookie_manager: Arc<CookieManager>,
+    #[cfg(feature = "oauth-proxy")]
+    pub client_registry: ClientRegistry,
 }
 
 /// Bearer token validation middleware for ADR-002
@@ -230,6 +234,7 @@ pub fn create_app_adr002(
         config,
         oauth_provider,
         cookie_manager,
+        client_registry: ClientRegistry::new(),
     };
 
     #[cfg(not(feature = "oauth-proxy"))]
@@ -251,12 +256,19 @@ pub fn create_app_adr002(
         .route("/token", post(token_handler))
         .with_state(state.clone());
 
+    // DCR endpoint needs separate router with ClientRegistry state
+    #[cfg(feature = "oauth-proxy")]
+    let dcr_routes = Router::new()
+        .route("/register", post(register_handler))
+        .with_state(state.client_registry.clone());
+
     let public_routes = Router::new()
         .route("/health", get(health_check))
-        .route("/.well-known/oauth-protected-resource", get(oauth_metadata));
+        .route("/.well-known/oauth-protected-resource", get(oauth_metadata))
+        .route("/.well-known/oauth-authorization-server", get(oauth_authorization_server_metadata));
 
     #[cfg(feature = "oauth-proxy")]
-    let public_routes = public_routes.merge(oauth_routes);
+    let public_routes = public_routes.merge(oauth_routes).merge(dcr_routes);
 
     // Protected routes (Bearer token required)
     let protected_routes = Router::new()
@@ -268,10 +280,24 @@ pub fn create_app_adr002(
             bearer_auth_middleware_adr002,
         ));
 
-    // Merge routes and apply correlation ID middleware to ALL requests
+    // CORS layer for Claude.ai compatibility
+    // Allow Claude.ai domain to access OAuth metadata and endpoints
+    let cors = CorsLayer::new()
+        .allow_origin("https://claude.ai".parse::<HeaderValue>().unwrap())
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            axum::http::header::COOKIE,
+        ])
+        .allow_credentials(true);
+
+    // Merge routes and apply middlewares to ALL requests
     Router::new()
         .merge(public_routes.with_state(state.config.clone()))
         .merge(protected_routes)
+        .layer(cors)
         .layer(middleware::from_fn(correlation_id_middleware))
 }
 

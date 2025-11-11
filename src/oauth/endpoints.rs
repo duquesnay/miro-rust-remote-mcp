@@ -257,6 +257,7 @@ pub async fn token_handler(
     let provider = &state.oauth_provider;
     let cookie_manager = &state.cookie_manager;
     let config = &state.config;
+    let client_registry = &state.client_registry;
 
     info!(
         grant_type = %token_request.grant_type,
@@ -272,15 +273,31 @@ pub async fn token_handler(
         )));
     }
 
-    // Validate client_id matches our configuration
-    if token_request.client_id != config.client_id {
+    // Extract client_secret from either Authorization header (client_secret_basic) or form body (client_secret_post)
+    let client_secret = extract_client_secret(&headers, &token_request);
+
+    // Validate client credentials
+    // Priority: 1) DCR registered clients, 2) Manual config client_id (backwards compatibility)
+    let is_valid_client = if let Some(ref secret) = client_secret {
+        // Client provided secret - validate against registry (DCR)
+        info!(client_id = %token_request.client_id, "Validating DCR registered client");
+        client_registry.validate(&token_request.client_id, secret)
+    } else {
+        // No secret provided - check if it's our manual config client (backwards compatibility)
+        info!(client_id = %token_request.client_id, "Checking manual config client");
+        token_request.client_id == config.client_id
+    };
+
+    if !is_valid_client {
         warn!(
-            expected = %config.client_id,
-            received = %token_request.client_id,
-            "Client ID mismatch"
+            client_id = %token_request.client_id,
+            has_secret = client_secret.is_some(),
+            "Client authentication failed"
         );
-        return Err(OAuthEndpointError::Unauthorized("Invalid client_id".to_string()));
+        return Err(OAuthEndpointError::Unauthorized("Invalid client credentials".to_string()));
     }
+
+    info!(client_id = %token_request.client_id, "Client authenticated successfully");
 
     // Extract pending code exchange from cookie
     let pending_cookie = extract_cookie(&headers, PENDING_CODE_COOKIE_NAME).ok_or_else(|| {
@@ -354,6 +371,34 @@ fn extract_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
                 None
             }
         })
+}
+
+/// Extract client_secret from request
+/// Supports both client_secret_basic (Authorization header) and client_secret_post (form body)
+fn extract_client_secret(
+    headers: &HeaderMap,
+    token_request: &super::types::TokenRequest,
+) -> Option<String> {
+    // Try client_secret_basic (Authorization: Basic base64(client_id:client_secret))
+    if let Some(auth_header) = headers.get(header::AUTHORIZATION) {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if let Some(basic_token) = auth_str.strip_prefix("Basic ") {
+                // Decode base64
+                if let Ok(decoded_bytes) = URL_SAFE_NO_PAD.decode(basic_token.as_bytes()) {
+                    if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
+                        // Split by : to get client_id:client_secret
+                        let mut parts = decoded_str.splitn(2, ':');
+                        let _client_id = parts.next()?;
+                        let client_secret = parts.next()?;
+                        return Some(client_secret.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Try client_secret_post (included in form body)
+    token_request.client_secret.clone()
 }
 
 /// Errors from OAuth endpoint handlers

@@ -107,6 +107,10 @@ pub struct TokenRequest {
     /// Client ID (for validation)
     pub client_id: String,
 
+    /// Client secret (for client_secret_post authentication method)
+    #[serde(default)]
+    pub client_secret: Option<String>,
+
     /// PKCE code verifier (if PKCE was used)
     pub code_verifier: Option<String>,
 }
@@ -119,4 +123,81 @@ impl From<MiroUser> for UserInfo {
             name: miro_user.name,
         }
     }
+}
+
+/// Dynamic Client Registration request (RFC 7591)
+#[derive(Debug, Deserialize)]
+pub struct ClientRegistrationRequest {
+    /// Client name (e.g., "Claude")
+    pub client_name: String,
+
+    /// Array of redirect URIs
+    pub redirect_uris: Vec<String>,
+
+    /// Grant types supported
+    #[serde(default)]
+    pub grant_types: Vec<String>,
+
+    /// Response types supported
+    #[serde(default)]
+    pub response_types: Vec<String>,
+
+    /// Token endpoint authentication method
+    #[serde(default)]
+    pub token_endpoint_auth_method: Option<String>,
+
+    /// Scopes requested
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+/// Dynamic Client Registration response (RFC 7591)
+#[derive(Debug, Serialize)]
+pub struct ClientRegistrationResponse {
+    /// Unique client identifier
+    pub client_id: String,
+
+    /// Client secret
+    pub client_secret: String,
+
+    /// Registration access token (for future updates)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registration_access_token: Option<String>,
+
+    /// Registration client URI (for updates/deletion)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registration_client_uri: Option<String>,
+
+    /// Client name
+    pub client_name: String,
+
+    /// Redirect URIs
+    pub redirect_uris: Vec<String>,
+
+    /// Grant types
+    pub grant_types: Vec<String>,
+
+    /// Response types
+    pub response_types: Vec<String>,
+
+    /// Token endpoint auth method
+    pub token_endpoint_auth_method: String,
+
+    /// Client ID issued at timestamp
+    pub client_id_issued_at: i64,
+
+    /// Client secret expires at (0 = never)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret_expires_at: Option<i64>,
+}
+
+/// Registered OAuth client
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisteredClient {
+    pub client_id: String,
+    pub client_secret: String,
+    pub client_name: String,
+    pub redirect_uris: Vec<String>,
+    pub grant_types: Vec<String>,
+    pub created_at: DateTime<Utc>,
 }
