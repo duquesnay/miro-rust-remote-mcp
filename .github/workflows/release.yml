@@ -54,12 +54,14 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          # Extract version from git tag (e.g., refs/tags/v0.2.0 -> 0.2.0)
-          VERSION=${GITHUB_REF#refs/tags/v}
-          # Fallback to workflow input for manual dispatch
-          VERSION=${VERSION:-${{ github.event.inputs.tag }}}
-          # Remove leading 'v' if present in input
-          VERSION=${VERSION#v}
+          # For workflow_dispatch, use input tag; for tag push, extract from GITHUB_REF
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove leading 'v' if present
+          VERSION="${VERSION#v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "artifact=miro-mcp-server-${VERSION}-x86_64-linux.tar.gz" >> $GITHUB_OUTPUT
 
