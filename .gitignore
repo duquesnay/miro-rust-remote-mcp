@@ -56,3 +56,5 @@ temp/
 *.bak
 *.backup
 spikes/
+*.tgz
+convo-archive.*
