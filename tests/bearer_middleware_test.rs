@@ -80,10 +80,11 @@ async fn test_oauth_metadata_no_auth_required() {
 async fn test_oauth_authorize_no_auth_required() {
     let app = create_test_app();
 
+    // OAuth authorization request with required query parameters
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/oauth/authorize")
+                .uri("/oauth/authorize?response_type=code&client_id=test_client&redirect_uri=https://claude.ai/api/mcp/auth_callback")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )

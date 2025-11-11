@@ -24,6 +24,27 @@ const STATE_COOKIE_MAX_AGE: i64 = 300; // 5 minutes in seconds
 /// Pending code cookie max age (5 minutes - code must be exchanged quickly)
 const PENDING_CODE_MAX_AGE: i64 = 300; // 5 minutes in seconds
 
+/// Query parameters for OAuth authorization request (RFC 6749)
+#[derive(Debug, Deserialize)]
+pub struct AuthorizeParams {
+    /// OAuth response type (should be "code")
+    response_type: String,
+
+    /// Client ID from Claude.ai
+    client_id: String,
+
+    /// Redirect URI where Claude.ai wants the authorization code sent
+    redirect_uri: String,
+
+    /// State parameter from Claude.ai for CSRF protection
+    #[serde(default)]
+    state: Option<String>,
+
+    /// Requested OAuth scopes
+    #[serde(default)]
+    scope: Option<String>,
+}
+
 /// Query parameters for OAuth callback
 #[derive(Debug, Deserialize)]
 pub struct CallbackParams {
@@ -54,20 +75,39 @@ pub struct TokenResponseRfc6749 {
 
 /// Handle GET /oauth/authorize - Initiate OAuth flow with Miro
 ///
-/// Generates PKCE pair, creates state nonce, stores in encrypted cookie,
-/// then redirects to Miro authorization endpoint.
+/// Receives authorization request from Claude.ai, generates PKCE pair,
+/// stores state in encrypted cookie, then redirects to Miro.
 ///
 /// # Flow
-/// 1. Generate PKCE code verifier and challenge
-/// 2. Generate random state nonce (CSRF protection)
-/// 3. Store state and PKCE verifier in encrypted cookie
-/// 4. Redirect user to Miro authorization URL with PKCE challenge
+/// 1. Extract and validate authorization request parameters from Claude.ai
+/// 2. Generate PKCE code verifier and challenge
+/// 3. Generate random state nonce (CSRF protection)
+/// 4. Store state, PKCE verifier, and Claude's redirect_uri in encrypted cookie
+/// 5. Redirect user to Miro authorization URL with PKCE challenge
 pub async fn authorize_handler(
     State(state): State<crate::http_server::AppStateADR002>,
+    Query(params): Query<AuthorizeParams>,
 ) -> Result<Response, OAuthEndpointError> {
     let provider = &state.oauth_provider;
     let cookie_manager = &state.cookie_manager;
-    info!("Starting OAuth authorization flow");
+
+    info!(
+        client_id = %params.client_id,
+        redirect_uri = %params.redirect_uri,
+        response_type = %params.response_type,
+        state = ?params.state,
+        scope = ?params.scope,
+        "Starting OAuth authorization flow from Claude.ai"
+    );
+
+    // Validate response_type (must be "code" for authorization code flow)
+    if params.response_type != "code" {
+        warn!(response_type = %params.response_type, "Invalid response_type");
+        return Err(OAuthEndpointError::InvalidRequest(format!(
+            "Unsupported response_type: {}. Only 'code' is supported.",
+            params.response_type
+        )));
+    }
 
     // Generate PKCE pair
     let pkce = generate_pkce_pair();
@@ -78,11 +118,11 @@ pub async fn authorize_handler(
     let state_bytes: [u8; 32] = rng.gen();
     let state = URL_SAFE_NO_PAD.encode(state_bytes);
 
-    // Create OAuth state for cookie storage
+    // Create OAuth state for cookie storage (use redirect_uri from Claude.ai's request)
     let oauth_state = OAuthState {
         state: state.clone(),
         code_verifier: pkce.verifier,
-        redirect_uri: String::from("https://claude.ai/oauth/callback"), // Claude.ai callback
+        redirect_uri: params.redirect_uri.clone(), // From Claude.ai's authorization request
     };
 
     // Encrypt and store state in cookie
