@@ -5,7 +5,6 @@
 /// - /oauth/register (dynamic client registration)
 /// - /oauth/authorize (authorization with user consent)
 /// - /oauth/token (token exchange - already exists, needs DCR support)
-
 use axum::{
     extract::{Json, Query, State},
     http::StatusCode,
@@ -87,7 +86,10 @@ async fn metadata(State(config): State<OAuthConfig>) -> Json<AuthorizationServer
         registration_endpoint: format!("{}/oauth/register", config.base_url),
         scopes_supported: vec!["boards:read".to_string(), "boards:write".to_string()],
         response_types_supported: vec!["code".to_string()],
-        grant_types_supported: vec!["authorization_code".to_string(), "refresh_token".to_string()],
+        grant_types_supported: vec![
+            "authorization_code".to_string(),
+            "refresh_token".to_string(),
+        ],
         token_endpoint_auth_methods_supported: vec![
             "client_secret_basic".to_string(),
             "client_secret_post".to_string(),

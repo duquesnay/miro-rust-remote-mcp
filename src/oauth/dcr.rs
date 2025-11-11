@@ -17,11 +17,17 @@ pub struct ClientRegistry {
     clients: Arc<RwLock<HashMap<String, RegisteredClient>>>,
 }
 
-impl ClientRegistry {
-    pub fn new() -> Self {
+impl Default for ClientRegistry {
+    fn default() -> Self {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+}
+
+impl ClientRegistry {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Register a new OAuth client

@@ -10,10 +10,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
-use super::{
-    pkce::generate_pkce_pair,
-    types::OAuthState,
-};
+use super::{pkce::generate_pkce_pair, types::OAuthState};
 
 /// Cookie name for OAuth state during authorization flow
 const STATE_COOKIE_NAME: &str = "miro_oauth_state";
@@ -111,7 +108,10 @@ pub async fn authorize_handler(
 
     Ok((
         StatusCode::FOUND,
-        [(header::SET_COOKIE, cookie_header), (header::LOCATION, auth_url.to_string())],
+        [
+            (header::SET_COOKIE, cookie_header),
+            (header::LOCATION, auth_url.to_string()),
+        ],
     )
         .into_response())
 }
@@ -172,12 +172,14 @@ pub async fn callback_handler(
     info!("State validated successfully");
 
     // Extract authorization code
-    let code = params
-        .code
-        .as_ref()
-        .ok_or_else(|| OAuthEndpointError::InvalidRequest("Authorization code missing".to_string()))?;
+    let code = params.code.as_ref().ok_or_else(|| {
+        OAuthEndpointError::InvalidRequest("Authorization code missing".to_string())
+    })?;
 
-    info!(code_length = code.len(), "Received authorization code from Miro");
+    info!(
+        code_length = code.len(),
+        "Received authorization code from Miro"
+    );
 
     // Store code + verifier temporarily for token endpoint to use
     let pending_exchange = super::types::PendingCodeExchange {
@@ -186,9 +188,9 @@ pub async fn callback_handler(
         expires_at: Utc::now() + chrono::Duration::seconds(PENDING_CODE_MAX_AGE),
     };
 
-    let encrypted_pending = cookie_manager
-        .encrypt(&pending_exchange)
-        .map_err(|e| OAuthEndpointError::CookieError(format!("Failed to encrypt pending code: {}", e)))?;
+    let encrypted_pending = cookie_manager.encrypt(&pending_exchange).map_err(|e| {
+        OAuthEndpointError::CookieError(format!("Failed to encrypt pending code: {}", e))
+    })?;
 
     // Build response: store code in cookie and redirect to Claude.ai WITH the code
     let pending_code_cookie = format!(
@@ -203,7 +205,10 @@ pub async fn callback_handler(
     );
 
     // Redirect to Claude.ai WITH the authorization code in URL (standard OAuth2 flow)
-    let redirect_url = format!("{}?code={}&state={}", oauth_state.redirect_uri, code, state_param);
+    let redirect_url = format!(
+        "{}?code={}&state={}",
+        oauth_state.redirect_uri, code, state_param
+    );
 
     info!(
         redirect_url = %redirect_url,
@@ -294,7 +299,9 @@ pub async fn token_handler(
             has_secret = client_secret.is_some(),
             "Client authentication failed"
         );
-        return Err(OAuthEndpointError::Unauthorized("Invalid client credentials".to_string()));
+        return Err(OAuthEndpointError::Unauthorized(
+            "Invalid client credentials".to_string(),
+        ));
     }
 
     info!(client_id = %token_request.client_id, "Client authenticated successfully");
@@ -333,7 +340,9 @@ pub async fn token_handler(
     let cookie_data = provider
         .exchange_code_for_token(&pending_exchange.code, &pending_exchange.code_verifier)
         .await
-        .map_err(|e| OAuthEndpointError::OAuthError(format!("Token exchange with Miro failed: {}", e)))?;
+        .map_err(|e| {
+            OAuthEndpointError::OAuthError(format!("Token exchange with Miro failed: {}", e))
+        })?;
 
     // Calculate token expiration
     let expires_in = (cookie_data.expires_at - now).num_seconds().max(0);
@@ -362,9 +371,7 @@ fn extract_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
         .ok()?
         .split(';')
         .find_map(|cookie| {
-            let mut parts = cookie.trim().splitn(2, '=');
-            let name = parts.next()?;
-            let value = parts.next()?;
+            let (name, value) = cookie.trim().split_once('=')?;
             if name == cookie_name {
                 Some(value.to_string())
             } else {
@@ -387,9 +394,7 @@ fn extract_client_secret(
                 if let Ok(decoded_bytes) = URL_SAFE_NO_PAD.decode(basic_token.as_bytes()) {
                     if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
                         // Split by : to get client_id:client_secret
-                        let mut parts = decoded_str.splitn(2, ':');
-                        let _client_id = parts.next()?;
-                        let client_secret = parts.next()?;
+                        let (_client_id, client_secret) = decoded_str.split_once(':')?;
                         return Some(client_secret.to_string());
                     }
                 }
@@ -414,11 +419,22 @@ pub enum OAuthEndpointError {
 impl IntoResponse for OAuthEndpointError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            OAuthEndpointError::InvalidState(msg) => (StatusCode::BAD_REQUEST, format!("Invalid state: {}", msg)),
-            OAuthEndpointError::InvalidRequest(msg) => (StatusCode::BAD_REQUEST, format!("Invalid request: {}", msg)),
-            OAuthEndpointError::OAuthError(msg) => (StatusCode::BAD_REQUEST, format!("OAuth error: {}", msg)),
-            OAuthEndpointError::CookieError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Cookie error: {}", msg)),
-            OAuthEndpointError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", msg)),
+            OAuthEndpointError::InvalidState(msg) => {
+                (StatusCode::BAD_REQUEST, format!("Invalid state: {}", msg))
+            }
+            OAuthEndpointError::InvalidRequest(msg) => {
+                (StatusCode::BAD_REQUEST, format!("Invalid request: {}", msg))
+            }
+            OAuthEndpointError::OAuthError(msg) => {
+                (StatusCode::BAD_REQUEST, format!("OAuth error: {}", msg))
+            }
+            OAuthEndpointError::CookieError(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Cookie error: {}", msg),
+            ),
+            OAuthEndpointError::Unauthorized(msg) => {
+                (StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", msg))
+            }
         };
 
         error!(status = %status, message = %message, "OAuth endpoint error");
@@ -436,11 +452,19 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::COOKIE,
-            "session=abc123; miro_auth=token456; other=xyz".parse().unwrap(),
+            "session=abc123; miro_auth=token456; other=xyz"
+                .parse()
+                .unwrap(),
         );
 
-        assert_eq!(extract_cookie(&headers, "miro_auth"), Some("token456".to_string()));
-        assert_eq!(extract_cookie(&headers, "session"), Some("abc123".to_string()));
+        assert_eq!(
+            extract_cookie(&headers, "miro_auth"),
+            Some("token456".to_string())
+        );
+        assert_eq!(
+            extract_cookie(&headers, "session"),
+            Some("abc123".to_string())
+        );
         assert_eq!(extract_cookie(&headers, "nonexistent"), None);
     }
 
@@ -452,6 +476,9 @@ mod tests {
             "miro_auth=token456 ; other=xyz".parse().unwrap(),
         );
 
-        assert_eq!(extract_cookie(&headers, "miro_auth"), Some("token456".to_string()));
+        assert_eq!(
+            extract_cookie(&headers, "miro_auth"),
+            Some("token456".to_string())
+        );
     }
 }

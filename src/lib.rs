@@ -12,7 +12,7 @@ pub mod oauth_dcr;
 
 pub use auth::{AuthError, TokenSet, TokenValidator, UserInfo};
 pub use config::Config;
-pub use http_server::run_server_adr002;
+pub use http_server::{create_app_adr002, run_server_adr002};
 
 #[cfg(feature = "stdio-mcp")]
 pub use auth::TokenStore;
