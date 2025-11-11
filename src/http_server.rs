@@ -354,7 +354,14 @@ mod tests {
     #[cfg(feature = "oauth-proxy")]
     fn test_create_app_adr002() {
         let token_validator = Arc::new(TokenValidator::new());
-        let config = Arc::new(Config::from_env_or_file().unwrap());
+        let config = Arc::new(Config {
+            client_id: "test_client_id".to_string(),
+            client_secret: "test_client_secret".to_string(),
+            redirect_uri: "http://localhost:3010/oauth/callback".to_string(),
+            encryption_key: [0u8; 32],
+            port: 3010,
+            base_url: Some("http://localhost:3010".to_string()),
+        });
         let oauth_provider = Arc::new(MiroOAuthProvider::new(
             config.client_id.clone(),
             config.client_secret.clone(),
