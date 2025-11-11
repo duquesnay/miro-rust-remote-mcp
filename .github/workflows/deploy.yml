@@ -55,17 +55,17 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Install Scaleway CLI
-        run: |
-          curl -o /usr/local/bin/scw -L "https://github.com/scaleway/scaleway-cli/releases/latest/download/scaleway-cli_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64"
-          chmod +x /usr/local/bin/scw
-          scw version
+        uses: scaleway/action-scw@v0
+        with:
+          version: v2.45.0
+          access-key: ${{ secrets.SCW_ACCESS_KEY }}
+          secret-key: ${{ secrets.SCW_SECRET_KEY }}
+          default-project-id: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          default-organization-id: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
+          export-config: true
 
       - name: Deploy to Scaleway
         env:
-          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
-          SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
-          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
           IMAGE_TAG: ${{ steps.version.outputs.version }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
