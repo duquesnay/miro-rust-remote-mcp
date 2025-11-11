@@ -29,6 +29,9 @@ rmcp = { version = "0.7", features = ["server", "transport-io", "transport-strea
 oauth2 = { version = "4.4", optional = true }
 ring = { version = "0.17", optional = true }
 base64 = { version = "0.22", optional = true }
+aes-gcm = { version = "0.10", optional = true }
+rand = { version = "0.8", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -36,7 +39,7 @@ wiremock = "0.6"
 serial_test = "3.0"
 
 [features]
-stdio-mcp = ["rmcp", "oauth2", "ring", "base64"]
+stdio-mcp = ["rmcp", "oauth2", "ring", "base64", "aes-gcm", "rand", "sha2"]
 default = ["stdio-mcp"]
 test-utils = []
 
