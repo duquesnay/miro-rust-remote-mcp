@@ -241,9 +241,14 @@ pub fn create_app_adr002(
     // Public routes (no authentication required)
     #[cfg(feature = "oauth-proxy")]
     let oauth_routes = Router::new()
+        // Standard paths with /oauth prefix
         .route("/oauth/authorize", get(authorize_handler))
         .route("/oauth/callback", get(callback_handler))
         .route("/oauth/token", post(token_handler))
+        // Alias paths without /oauth prefix (for Claude.ai compatibility)
+        .route("/authorize", get(authorize_handler))
+        .route("/callback", get(callback_handler))
+        .route("/token", post(token_handler))
         .with_state(state.clone());
 
     let public_routes = Router::new()
