@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting HTTP server on 0.0.0.0:{}", port);
 
     // Start HTTP server
-    miro_mcp_server::run_server_adr002(port, token_validator).await?;
+    miro_mcp_server::run_http_server(port, token_validator).await?;
 
     Ok(())
 }

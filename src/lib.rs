@@ -10,5 +10,5 @@ pub use auth::{
     TokenValidator, UserInfo,
 };
 pub use config::Config;
-pub use http_server::{create_app_adr002, run_server_adr002};
+pub use http_server::{create_http_server, run_http_server};
 pub use miro::{MiroClient, MiroError};

@@ -136,14 +136,14 @@ async fn test_metadata_does_not_include_rfc8414_fields() {
 #[tokio::test]
 async fn test_www_authenticate_includes_resource_metadata() {
     use axum::http::header::WWW_AUTHENTICATE;
-    use miro_mcp_server::{http_server::create_app_adr002, TokenValidator};
+    use miro_mcp_server::{http_server::create_http_server, TokenValidator};
     use std::sync::Arc;
 
     // Create mock token validator (won't be called in this test)
     let token_validator = Arc::new(TokenValidator::new());
 
     // Create app with bearer middleware
-    let app = create_app_adr002(token_validator);
+    let app = create_http_server(token_validator);
 
     // Make request without auth token
     let response = app

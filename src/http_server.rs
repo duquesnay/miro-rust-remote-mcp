@@ -141,12 +141,12 @@ async fn bearer_auth_middleware_adr002(
     Ok(next.run(request).await)
 }
 
-/// Create HTTP server for ADR-002 Resource Server pattern
+/// Create HTTP server for Resource Server pattern
 /// Only includes:
 /// - OAuth metadata endpoint (AUTH6)
 /// - Bearer token authentication (AUTH7+AUTH8+AUTH9)
 /// - MCP tools (list_boards, get_board)
-pub fn create_app_adr002(token_validator: Arc<TokenValidator>) -> Router {
+pub fn create_http_server(token_validator: Arc<TokenValidator>) -> Router {
     let state = AppStateADR002 { token_validator };
 
     // Public routes (no authentication required)
@@ -171,13 +171,13 @@ pub fn create_app_adr002(token_validator: Arc<TokenValidator>) -> Router {
         .with_state(state)
 }
 
-/// Run HTTP server with ADR-002 Resource Server pattern
+/// Run HTTP server with Resource Server pattern
 /// No OAuth client code - only Bearer token validation
-pub async fn run_server_adr002(
+pub async fn run_http_server(
     port: u16,
     token_validator: Arc<TokenValidator>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let app = create_app_adr002(token_validator);
+    let app = create_http_server(token_validator);
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
@@ -200,9 +200,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_app_adr002() {
+    fn test_create_http_server() {
         let token_validator = Arc::new(TokenValidator::new());
-        let app = create_app_adr002(token_validator);
+        let app = create_http_server(token_validator);
         assert!(std::mem::size_of_val(&app) > 0);
     }
 }
