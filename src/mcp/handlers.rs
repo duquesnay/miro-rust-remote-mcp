@@ -7,7 +7,7 @@
 
 use super::protocol::*;
 use crate::auth::token_validator::UserInfo;
-use crate::mcp::tools::{BoardInfo, ListBoardsResponse, GetBoardResponse};
+use crate::mcp::tools::{BoardInfo, GetBoardResponse, ListBoardsResponse};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -15,10 +15,7 @@ use tracing::{error, info, warn};
 /// Handle the initialize method
 ///
 /// Returns server capabilities and protocol version
-pub fn handle_initialize(
-    req: &JsonRpcRequest,
-    _user_info: &Arc<UserInfo>,
-) -> JsonRpcResponse {
+pub fn handle_initialize(req: &JsonRpcRequest, _user_info: &Arc<UserInfo>) -> JsonRpcResponse {
     info!("Handling initialize request");
 
     let server_capabilities = ServerCapabilities {
@@ -133,12 +130,8 @@ pub async fn handle_tools_call(
     );
 
     match tool_name.as_str() {
-        "list_boards" => {
-            handle_list_boards_call(req, user_info, token).await
-        }
-        "get_board" => {
-            handle_get_board_call(req, user_info, token, &tool_call_params).await
-        }
+        "list_boards" => handle_list_boards_call(req, user_info, token).await,
+        "get_board" => handle_get_board_call(req, user_info, token, &tool_call_params).await,
         _ => {
             warn!(tool_name = %tool_name, "Unknown tool requested");
             JsonRpcResponse::error(
@@ -167,64 +160,67 @@ async fn handle_list_boards_call(
         .await
     {
         Ok(response) => match response.status() {
-            reqwest::StatusCode::OK => {
-                match response.json::<serde_json::Value>().await {
-                    Ok(boards_response) => {
-                        match boards_response.get("data").and_then(|v| v.as_array()) {
-                            Some(boards) => {
-                                let board_infos: Vec<BoardInfo> = boards
-                                    .iter()
-                                    .filter_map(|board_json| {
-                                        serde_json::from_value::<crate::miro::types::Board>(board_json.clone())
-                                            .ok()
-                                            .map(BoardInfo::from)
-                                    })
-                                    .collect();
+            reqwest::StatusCode::OK => match response.json::<serde_json::Value>().await {
+                Ok(boards_response) => {
+                    match boards_response.get("data").and_then(|v| v.as_array()) {
+                        Some(boards) => {
+                            let board_infos: Vec<BoardInfo> = boards
+                                .iter()
+                                .filter_map(|board_json| {
+                                    serde_json::from_value::<crate::miro::types::Board>(
+                                        board_json.clone(),
+                                    )
+                                    .ok()
+                                    .map(BoardInfo::from)
+                                })
+                                .collect();
 
-                                let count = board_infos.len();
-                                let list_boards_result = ListBoardsResponse {
-                                    boards: board_infos,
-                                    count,
-                                };
+                            let count = board_infos.len();
+                            let list_boards_result = ListBoardsResponse {
+                                boards: board_infos,
+                                count,
+                            };
 
-                                info!(
-                                    user_id = %user_info.user_id,
-                                    count = count,
-                                    "Successfully listed boards via MCP"
-                                );
+                            info!(
+                                user_id = %user_info.user_id,
+                                count = count,
+                                "Successfully listed boards via MCP"
+                            );
 
-                                let result = ToolCallResult::Success {
-                                    content: vec![TextContent {
-                                        content_type: "text".to_string(),
-                                        text: serde_json::to_string(&list_boards_result)
-                                            .unwrap_or_else(|_| "{}".to_string()),
-                                    }],
-                                    is_error: Some(false),
-                                };
+                            let result = ToolCallResult::Success {
+                                content: vec![TextContent {
+                                    content_type: "text".to_string(),
+                                    text: serde_json::to_string(&list_boards_result)
+                                        .unwrap_or_else(|_| "{}".to_string()),
+                                }],
+                                is_error: Some(false),
+                            };
 
-                                JsonRpcResponse::success(
-                                    serde_json::to_value(result).unwrap_or_else(|_| json!({})),
-                                    req.id.clone(),
-                                )
-                            }
-                            None => {
-                                error!("Miro API response missing data array");
-                                JsonRpcResponse::error(
-                                    JsonRpcError::internal_error("Invalid Miro API response format"),
-                                    req.id.clone(),
-                                )
-                            }
+                            JsonRpcResponse::success(
+                                serde_json::to_value(result).unwrap_or_else(|_| json!({})),
+                                req.id.clone(),
+                            )
+                        }
+                        None => {
+                            error!("Miro API response missing data array");
+                            JsonRpcResponse::error(
+                                JsonRpcError::internal_error("Invalid Miro API response format"),
+                                req.id.clone(),
+                            )
                         }
                     }
-                    Err(e) => {
-                        error!(error = %e, "Failed to parse Miro API response");
-                        JsonRpcResponse::error(
-                            JsonRpcError::internal_error(format!("Failed to parse API response: {}", e)),
-                            req.id.clone(),
-                        )
-                    }
                 }
-            }
+                Err(e) => {
+                    error!(error = %e, "Failed to parse Miro API response");
+                    JsonRpcResponse::error(
+                        JsonRpcError::internal_error(format!(
+                            "Failed to parse API response: {}",
+                            e
+                        )),
+                        req.id.clone(),
+                    )
+                }
+            },
             reqwest::StatusCode::UNAUTHORIZED => {
                 warn!("Bearer token invalid or expired");
                 JsonRpcResponse::error(
@@ -235,7 +231,10 @@ async fn handle_list_boards_call(
             status => {
                 error!(status = ?status, "Miro API returned error");
                 JsonRpcResponse::error(
-                    JsonRpcError::server_error(-32001, format!("Miro API error: {}", status.as_u16())),
+                    JsonRpcError::server_error(
+                        -32001,
+                        format!("Miro API error: {}", status.as_u16()),
+                    ),
                     req.id.clone(),
                 )
             }
@@ -259,7 +258,11 @@ async fn handle_get_board_call(
 ) -> JsonRpcResponse {
     use reqwest::Client;
 
-    let board_id = match tool_params.arguments.as_ref().and_then(|a| a.get("board_id")) {
+    let board_id = match tool_params
+        .arguments
+        .as_ref()
+        .and_then(|a| a.get("board_id"))
+    {
         Some(Value::String(id)) => id.clone(),
         _ => {
             warn!("get_board missing board_id argument");
@@ -288,43 +291,41 @@ async fn handle_get_board_call(
         .await
     {
         Ok(response) => match response.status() {
-            reqwest::StatusCode::OK => {
-                match response.json::<crate::miro::types::Board>().await {
-                    Ok(board) => {
-                        info!(
-                            user_id = %user_info.user_id,
-                            board_id = %board_id,
-                            board_name = %board.name,
-                            "Successfully retrieved board via MCP"
-                        );
+            reqwest::StatusCode::OK => match response.json::<crate::miro::types::Board>().await {
+                Ok(board) => {
+                    info!(
+                        user_id = %user_info.user_id,
+                        board_id = %board_id,
+                        board_name = %board.name,
+                        "Successfully retrieved board via MCP"
+                    );
 
-                        let get_board_result = GetBoardResponse {
-                            board: BoardInfo::from(board),
-                        };
+                    let get_board_result = GetBoardResponse {
+                        board: BoardInfo::from(board),
+                    };
 
-                        let result = ToolCallResult::Success {
-                            content: vec![TextContent {
-                                content_type: "text".to_string(),
-                                text: serde_json::to_string(&get_board_result)
-                                    .unwrap_or_else(|_| "{}".to_string()),
-                            }],
-                            is_error: Some(false),
-                        };
+                    let result = ToolCallResult::Success {
+                        content: vec![TextContent {
+                            content_type: "text".to_string(),
+                            text: serde_json::to_string(&get_board_result)
+                                .unwrap_or_else(|_| "{}".to_string()),
+                        }],
+                        is_error: Some(false),
+                    };
 
-                        JsonRpcResponse::success(
-                            serde_json::to_value(result).unwrap_or_else(|_| json!({})),
-                            req.id.clone(),
-                        )
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Failed to parse board response");
-                        JsonRpcResponse::error(
-                            JsonRpcError::internal_error(format!("Failed to parse board: {}", e)),
-                            req.id.clone(),
-                        )
-                    }
+                    JsonRpcResponse::success(
+                        serde_json::to_value(result).unwrap_or_else(|_| json!({})),
+                        req.id.clone(),
+                    )
                 }
-            }
+                Err(e) => {
+                    error!(error = %e, "Failed to parse board response");
+                    JsonRpcResponse::error(
+                        JsonRpcError::internal_error(format!("Failed to parse board: {}", e)),
+                        req.id.clone(),
+                    )
+                }
+            },
             reqwest::StatusCode::NOT_FOUND => {
                 warn!(board_id = %board_id, "Board not found");
                 JsonRpcResponse::error(
@@ -342,7 +343,10 @@ async fn handle_get_board_call(
             status => {
                 error!(status = ?status, "Miro API returned error");
                 JsonRpcResponse::error(
-                    JsonRpcError::server_error(-32001, format!("Miro API error: {}", status.as_u16())),
+                    JsonRpcError::server_error(
+                        -32001,
+                        format!("Miro API error: {}", status.as_u16()),
+                    ),
                     req.id.clone(),
                 )
             }
@@ -363,8 +367,7 @@ mod tests {
 
     #[test]
     fn test_handle_initialize() {
-        let req = JsonRpcRequest::new("initialize")
-            .with_id(Value::Number(1.into()));
+        let req = JsonRpcRequest::new("initialize").with_id(Value::Number(1.into()));
         let user_info = Arc::new(UserInfo::new(
             "test-user".to_string(),
             "test-team".to_string(),
@@ -380,8 +383,7 @@ mod tests {
 
     #[test]
     fn test_handle_tools_list() {
-        let req = JsonRpcRequest::new("tools/list")
-            .with_id(Value::Number(1.into()));
+        let req = JsonRpcRequest::new("tools/list").with_id(Value::Number(1.into()));
         let user_info = Arc::new(UserInfo::new(
             "test-user".to_string(),
             "test-team".to_string(),
@@ -400,8 +402,7 @@ mod tests {
 
     #[test]
     fn test_handle_tools_call_missing_params() {
-        let req = JsonRpcRequest::new("tools/call")
-            .with_id(Value::Number(1.into()));
+        let req = JsonRpcRequest::new("tools/call").with_id(Value::Number(1.into()));
         let user_info = Arc::new(UserInfo::new(
             "test-user".to_string(),
             "test-team".to_string(),
@@ -412,9 +413,7 @@ mod tests {
         // Use block_on to run async function in sync test
         let response = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(async {
-                handle_tools_call(&req, &user_info, &token).await
-            });
+            .block_on(async { handle_tools_call(&req, &user_info, &token).await });
 
         assert!(response.error.is_some());
         assert_eq!(response.error.as_ref().unwrap().code, -32602);
@@ -437,9 +436,7 @@ mod tests {
 
         let response = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(async {
-                handle_tools_call(&req, &user_info, &token).await
-            });
+            .block_on(async { handle_tools_call(&req, &user_info, &token).await });
 
         assert!(response.error.is_some());
         assert_eq!(response.error.as_ref().unwrap().code, -32601);

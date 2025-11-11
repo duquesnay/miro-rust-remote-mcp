@@ -139,7 +139,7 @@ impl JsonRpcError {
 
     /// Server error (-32000 to -32099)
     pub fn server_error(code: i32, message: impl Into<String>) -> Self {
-        if code < -32099 || code > -32000 {
+        if !(-32099..=-32000).contains(&code) {
             return Self {
                 code: -32000,
                 message: message.into(),

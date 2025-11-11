@@ -271,14 +271,19 @@ mod tests {
         assert_eq!(url.host_str(), Some("miro.com"));
         assert_eq!(url.path(), "/oauth/authorize");
 
-        let params: std::collections::HashMap<_, _> =
-            url.query_pairs().into_owned().collect();
+        let params: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
 
         assert_eq!(params.get("client_id"), Some(&"test_client_id".to_string()));
         assert_eq!(params.get("response_type"), Some(&"code".to_string()));
         assert_eq!(params.get("state"), Some(&"test_state".to_string()));
-        assert_eq!(params.get("code_challenge"), Some(&"test_challenge".to_string()));
-        assert_eq!(params.get("code_challenge_method"), Some(&"S256".to_string()));
+        assert_eq!(
+            params.get("code_challenge"),
+            Some(&"test_challenge".to_string())
+        );
+        assert_eq!(
+            params.get("code_challenge_method"),
+            Some(&"S256".to_string())
+        );
         assert_eq!(
             params.get("redirect_uri"),
             Some(&"http://localhost:3000/oauth/callback".to_string())

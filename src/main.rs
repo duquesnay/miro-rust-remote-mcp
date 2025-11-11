@@ -1,12 +1,16 @@
-use miro_mcp_server::{
-    Config, CookieStateManager, CookieTokenManager, MiroMcpServer, MiroOAuthClient,
-    TokenValidator,
-};
+#[cfg(feature = "stdio-mcp")]
+use miro_mcp_server::MiroMcpServer;
+use miro_mcp_server::{run_server_adr002, Config, TokenValidator};
+#[cfg(feature = "stdio-mcp")]
 use rmcp::transport::stdio;
+#[cfg(feature = "stdio-mcp")]
 use rmcp::ServiceExt;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[cfg(feature = "oauth-proxy")]
+use miro_mcp_server::oauth::{cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,45 +34,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting Miro MCP Server");
 
     // Load configuration (env vars first, then config file)
-    let config = Config::from_env_or_file()?;
+    let config = Arc::new(Config::from_env_or_file()?);
     info!("Configuration loaded successfully");
 
-    // Create shared OAuth components for HTTP server
-    let oauth_client = Arc::new(MiroOAuthClient::new(&config)?);
-    let cookie_state_manager = CookieStateManager::from_config(config.encryption_key);
-    let cookie_token_manager = CookieTokenManager::from_config(config.encryption_key);
+    // Create token validator for HTTP server
     let token_validator = Arc::new(TokenValidator::new());
 
-    // Start OAuth HTTP server in background task
-    let http_oauth_client = Arc::clone(&oauth_client);
-    let http_cookie_state_manager = cookie_state_manager.clone();
-    let http_cookie_token_manager = cookie_token_manager.clone();
+    // Start ADR-002 Resource Server HTTP server in background task
     let http_token_validator = Arc::clone(&token_validator);
+    let http_config = Arc::clone(&config);
     let http_port = config.port;
 
     tokio::spawn(async move {
-        if let Err(e) = miro_mcp_server::run_server(
-            http_port,
-            http_oauth_client,
-            http_cookie_state_manager,
-            http_cookie_token_manager,
-            http_token_validator,
-        )
-        .await
+        #[cfg(feature = "oauth-proxy")]
         {
-            eprintln!("HTTP server error: {}", e);
+            let oauth_provider = Arc::new(MiroOAuthProvider::new(
+                http_config.client_id.clone(),
+                http_config.client_secret.clone(),
+                http_config.redirect_uri.clone(),
+            ));
+            let cookie_manager = Arc::new(CookieManager::new(&http_config.encryption_key));
+
+            if let Err(e) = run_server_adr002(
+                http_port,
+                http_token_validator,
+                http_config,
+                oauth_provider,
+                cookie_manager,
+            )
+            .await
+            {
+                eprintln!("HTTP server error: {}", e);
+            }
+        }
+
+        #[cfg(not(feature = "oauth-proxy"))]
+        {
+            if let Err(e) = run_server_adr002(http_port, http_token_validator, http_config).await {
+                eprintln!("HTTP server error: {}", e);
+            }
         }
     });
 
-    info!("OAuth HTTP server started on port {}", http_port);
+    info!("ADR-002 Resource Server HTTP started on port {}", http_port);
 
-    // Create MCP server
-    let mcp_server = MiroMcpServer::new(&config)?;
-    info!("MCP server initialized");
+    // Run stdio MCP server (if enabled)
+    #[cfg(feature = "stdio-mcp")]
+    {
+        let mcp_server = MiroMcpServer::new(&config)?;
+        info!("MCP server initialized");
 
-    // Run MCP server with stdio transport and wait
-    let service = mcp_server.serve(stdio()).await?;
-    service.waiting().await?;
+        // Run MCP server with stdio transport and wait
+        let service = mcp_server.serve(stdio()).await?;
+        service.waiting().await?;
+    }
+
+    #[cfg(not(feature = "stdio-mcp"))]
+    {
+        info!("stdio-mcp feature not enabled, keeping HTTP server running");
+        // Keep the HTTP server running
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+        }
+    }
 
     Ok(())
 }

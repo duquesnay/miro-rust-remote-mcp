@@ -126,7 +126,8 @@ impl CookieManager {
         }
 
         // Extract nonce (first 12 bytes)
-        let nonce_bytes: [u8; 12] = encrypted[0..12].try_into()
+        let nonce_bytes: [u8; 12] = encrypted[0..12]
+            .try_into()
             .map_err(|_| CookieError::InvalidFormat("Failed to extract nonce".to_string()))?;
         let nonce = Nonce::from(nonce_bytes);
 
@@ -189,7 +190,10 @@ mod tests {
         let encrypted1 = manager.encrypt(&data).unwrap();
         let encrypted2 = manager.encrypt(&data).unwrap();
 
-        assert_ne!(encrypted1, encrypted2, "Nonce should make ciphertexts unique");
+        assert_ne!(
+            encrypted1, encrypted2,
+            "Nonce should make ciphertexts unique"
+        );
     }
 
     #[test]

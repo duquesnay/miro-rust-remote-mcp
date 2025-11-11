@@ -152,7 +152,9 @@ pub async fn get_board(
 
     if board_id.is_empty() {
         warn!("Empty board_id provided");
-        return Err(ToolError::InvalidInput("board_id cannot be empty".to_string()));
+        return Err(ToolError::InvalidInput(
+            "board_id cannot be empty".to_string(),
+        ));
     }
 
     // Create Miro API client with reqwest
@@ -257,21 +259,17 @@ async fn fetch_board_from_miro(
         .map_err(|e| format!("HTTP request failed: {}", e))?;
 
     match response.status() {
-        reqwest::StatusCode::OK => {
-            response
-                .json::<Board>()
-                .await
-                .map_err(|e| format!("Failed to parse board response: {}", e))
-        }
+        reqwest::StatusCode::OK => response
+            .json::<Board>()
+            .await
+            .map_err(|e| format!("Failed to parse board response: {}", e)),
         reqwest::StatusCode::UNAUTHORIZED => {
             Err("Bearer token is invalid or expired (401)".to_string())
         }
         reqwest::StatusCode::FORBIDDEN => {
             Err("Access forbidden - insufficient permissions (403)".to_string())
         }
-        reqwest::StatusCode::NOT_FOUND => {
-            Err(format!("Board not found: {}", board_id))
-        }
+        reqwest::StatusCode::NOT_FOUND => Err(format!("Board not found: {}", board_id)),
         status => {
             let error_text = response
                 .text()

@@ -544,7 +544,9 @@ impl MiroClient {
                         .oauth_client
                         .refresh_token(&refresh_token)
                         .await
-                        .map_err(|e| MiroError::AuthError(AuthError::TokenRefreshFailed(e.to_string())))?;
+                        .map_err(|e| {
+                            MiroError::AuthError(AuthError::TokenRefreshFailed(e.to_string()))
+                        })?;
 
                     // Convert CookieData to TokenSet
                     let new_tokens = TokenSet {
@@ -640,7 +642,11 @@ mod tests {
     fn test_client_creation() {
         let config = get_test_config();
         let token_store = TokenStore::new(config.encryption_key).unwrap();
-        let oauth_client = MiroOAuthClient::new(config.client_id.clone(), config.client_secret.clone(), config.redirect_uri.clone());
+        let oauth_client = MiroOAuthClient::new(
+            config.client_id.clone(),
+            config.client_secret.clone(),
+            config.redirect_uri.clone(),
+        );
 
         let result = MiroClient::new(token_store, oauth_client);
         assert!(result.is_ok());
@@ -784,7 +790,11 @@ mod tests {
     fn test_bulk_create_validation_empty_items() {
         let config = get_test_config();
         let token_store = TokenStore::new(config.encryption_key).unwrap();
-        let oauth_client = MiroOAuthClient::new(config.client_id.clone(), config.client_secret.clone(), config.redirect_uri.clone());
+        let oauth_client = MiroOAuthClient::new(
+            config.client_id.clone(),
+            config.client_secret.clone(),
+            config.redirect_uri.clone(),
+        );
         let client = MiroClient::new(token_store, oauth_client).unwrap();
 
         // Test validation: empty items array should fail
@@ -804,7 +814,11 @@ mod tests {
     fn test_bulk_create_validation_too_many_items() {
         let config = get_test_config();
         let token_store = TokenStore::new(config.encryption_key).unwrap();
-        let oauth_client = MiroOAuthClient::new(config.client_id.clone(), config.client_secret.clone(), config.redirect_uri.clone());
+        let oauth_client = MiroOAuthClient::new(
+            config.client_id.clone(),
+            config.client_secret.clone(),
+            config.redirect_uri.clone(),
+        );
         let client = MiroClient::new(token_store, oauth_client).unwrap();
 
         // Create 21 items (exceeds limit of 20)

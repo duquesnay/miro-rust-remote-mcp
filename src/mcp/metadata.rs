@@ -45,11 +45,12 @@ pub struct OAuthProtectedResourceMetadata {
 /// Handle OAuth authorization server metadata endpoint (RFC 8414)
 /// GET /.well-known/oauth-authorization-server
 /// Returns full authorization server metadata including DCR registration endpoint
-pub async fn oauth_authorization_server_metadata(State(config): State<Arc<Config>>) -> impl IntoResponse {
+pub async fn oauth_authorization_server_metadata(
+    State(config): State<Arc<Config>>,
+) -> impl IntoResponse {
     let base_url = config
         .base_url
-        .as_ref()
-        .map(|s| s.as_str())
+        .as_deref()
         .unwrap_or("http://localhost:3000");
 
     Json(OAuthAuthorizationServerMetadata {
@@ -59,7 +60,10 @@ pub async fn oauth_authorization_server_metadata(State(config): State<Arc<Config
         registration_endpoint: format!("{}/register", base_url),
         grant_types_supported: vec!["authorization_code".to_string()],
         response_types_supported: vec!["code".to_string()],
-        token_endpoint_auth_methods_supported: vec!["client_secret_basic".to_string(), "client_secret_post".to_string()],
+        token_endpoint_auth_methods_supported: vec![
+            "client_secret_basic".to_string(),
+            "client_secret_post".to_string(),
+        ],
     })
 }
 
@@ -78,8 +82,7 @@ pub async fn oauth_authorization_server_metadata(State(config): State<Arc<Config
 pub async fn oauth_metadata(State(config): State<Arc<Config>>) -> impl IntoResponse {
     let base_url = config
         .base_url
-        .as_ref()
-        .map(|s| s.as_str())
+        .as_deref()
         .unwrap_or("http://localhost:3000");
 
     Json(OAuthProtectedResourceMetadata {

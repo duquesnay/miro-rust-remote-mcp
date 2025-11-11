@@ -1,6 +1,6 @@
 use miro_mcp_server::{Config, MiroMcpServer};
 use rmcp::transport::streamable_http_server::{
-    StreamableHttpService, session::local::LocalSessionManager,
+    session::local::LocalSessionManager, StreamableHttpService,
 };
 use std::sync::Arc;
 use tracing::info;
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mcp_service = StreamableHttpService::new(
         move || {
             MiroMcpServer::new(&config_for_factory)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                .map_err(|e| std::io::Error::other(e.to_string()))
         },
         Arc::new(LocalSessionManager::default()),
         Default::default(),
@@ -38,8 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: Merge with http_server.rs OAuth callback endpoint
 
     // Build Axum router
-    let app = axum::Router::new()
-        .nest_service("/mcp", mcp_service);
+    let app = axum::Router::new().nest_service("/mcp", mcp_service);
 
     info!("Starting HTTP server on 0.0.0.0:{}", port);
 

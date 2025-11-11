@@ -14,6 +14,7 @@ fn get_test_config() -> Config {
         redirect_uri: "http://localhost:3000/oauth/callback".to_string(),
         encryption_key: [0u8; 32],
         port: 3000,
+        base_url: Some("http://localhost:3000".to_string()),
     }
 }
 
@@ -31,7 +32,10 @@ async fn create_test_client(_mock_server_uri: &str) -> MiroClient {
     );
     token_store.save(&tokens).unwrap();
 
-    let oauth_client = MiroOAuthClient::new(&config).unwrap();
+    // MiroOAuthClient is an alias for MiroOAuthProvider
+    // Create it with the config values
+    let oauth_client =
+        MiroOAuthClient::new(config.client_id, config.client_secret, config.redirect_uri);
 
     // Note: In production code, we'd need to inject the mock server URL
     // For this test, we'll configure the client to use the mock server

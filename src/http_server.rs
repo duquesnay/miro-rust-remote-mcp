@@ -1,26 +1,28 @@
+use crate::auth::token_validator::UserInfo;
 use crate::auth::{extract_bearer_token, TokenValidator};
 use crate::config::Config;
-use crate::mcp::{oauth_metadata, oauth_authorization_server_metadata, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
-use crate::mcp::{handle_initialize, handle_tools_list, handle_tools_call};
-use crate::auth::token_validator::UserInfo;
+use crate::mcp::{handle_initialize, handle_tools_call, handle_tools_list};
+use crate::mcp::{
+    oauth_authorization_server_metadata, oauth_metadata, JsonRpcError, JsonRpcRequest,
+    JsonRpcResponse,
+};
 use axum::{
     extract::State,
-    http::{Request, StatusCode, Method, HeaderValue},
+    http::{HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Router, Json,
+    Json, Router,
 };
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 #[cfg(feature = "oauth-proxy")]
 use crate::oauth::{
-    authorize_handler, callback_handler, token_handler, register_handler,
-    cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider,
-    dcr::ClientRegistry,
+    authorize_handler, callback_handler, cookie_manager::CookieManager, dcr::ClientRegistry,
+    proxy_provider::MiroOAuthProvider, register_handler, token_handler,
 };
 
 /// Health check endpoint
@@ -76,10 +78,7 @@ async fn mcp_endpoint(
         }
         method => {
             warn!(method = %method, "Unknown MCP method");
-            JsonRpcResponse::error(
-                JsonRpcError::method_not_found(method),
-                req.id.clone(),
-            )
+            JsonRpcResponse::error(JsonRpcError::method_not_found(method), req.id.clone())
         }
     };
 
@@ -98,10 +97,7 @@ pub struct RequestId(pub String);
 
 /// Correlation ID middleware - adds unique request_id to all requests
 /// This enables tracing requests across the entire lifecycle for debugging
-async fn correlation_id_middleware(
-    mut request: Request<axum::body::Body>,
-    next: Next,
-) -> Response {
+async fn correlation_id_middleware(mut request: Request<axum::body::Body>, next: Next) -> Response {
     // Generate unique request ID
     let request_id = Uuid::new_v4().to_string();
 
@@ -114,7 +110,9 @@ async fn correlation_id_middleware(
     );
 
     // Store request_id in extensions for access in handlers
-    request.extensions_mut().insert(RequestId(request_id.clone()));
+    request
+        .extensions_mut()
+        .insert(RequestId(request_id.clone()));
 
     // Execute request within the span
     let _enter = span.enter();
@@ -223,10 +221,8 @@ async fn bearer_auth_middleware_adr002(
 pub fn create_app_adr002(
     token_validator: Arc<TokenValidator>,
     config: Arc<Config>,
-    #[cfg(feature = "oauth-proxy")]
-    oauth_provider: Arc<MiroOAuthProvider>,
-    #[cfg(feature = "oauth-proxy")]
-    cookie_manager: Arc<CookieManager>,
+    #[cfg(feature = "oauth-proxy")] oauth_provider: Arc<MiroOAuthProvider>,
+    #[cfg(feature = "oauth-proxy")] cookie_manager: Arc<CookieManager>,
 ) -> Router {
     #[cfg(feature = "oauth-proxy")]
     let state = AppStateADR002 {
@@ -265,7 +261,10 @@ pub fn create_app_adr002(
     let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/.well-known/oauth-protected-resource", get(oauth_metadata))
-        .route("/.well-known/oauth-authorization-server", get(oauth_authorization_server_metadata));
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth_authorization_server_metadata),
+        );
 
     #[cfg(feature = "oauth-proxy")]
     let public_routes = public_routes.merge(oauth_routes).merge(dcr_routes);
@@ -273,8 +272,14 @@ pub fn create_app_adr002(
     // Protected routes (Bearer token required)
     let protected_routes = Router::new()
         .route("/mcp", axum::routing::post(mcp_endpoint))
-        .route("/mcp/list_boards", axum::routing::post(crate::mcp::tools::list_boards))
-        .route("/mcp/get_board/:board_id", axum::routing::post(crate::mcp::tools::get_board))
+        .route(
+            "/mcp/list_boards",
+            axum::routing::post(crate::mcp::tools::list_boards),
+        )
+        .route(
+            "/mcp/get_board/:board_id",
+            axum::routing::post(crate::mcp::tools::get_board),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             bearer_auth_middleware_adr002,
@@ -307,10 +312,8 @@ pub async fn run_server_adr002(
     port: u16,
     token_validator: Arc<TokenValidator>,
     config: Arc<Config>,
-    #[cfg(feature = "oauth-proxy")]
-    oauth_provider: Arc<MiroOAuthProvider>,
-    #[cfg(feature = "oauth-proxy")]
-    cookie_manager: Arc<CookieManager>,
+    #[cfg(feature = "oauth-proxy")] oauth_provider: Arc<MiroOAuthProvider>,
+    #[cfg(feature = "oauth-proxy")] cookie_manager: Arc<CookieManager>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "oauth-proxy")]
     let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager);
@@ -321,8 +324,14 @@ pub async fn run_server_adr002(
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    info!("ADR-002 Resource Server + ADR-004 Proxy OAuth listening on {}", addr);
-    info!("OAuth metadata endpoint: http://{}/.well-known/oauth-protected-resource", addr);
+    info!(
+        "ADR-002 Resource Server + ADR-004 Proxy OAuth listening on {}",
+        addr
+    );
+    info!(
+        "OAuth metadata endpoint: http://{}/.well-known/oauth-protected-resource",
+        addr
+    );
     #[cfg(feature = "oauth-proxy")]
     info!("OAuth proxy endpoints: /oauth/authorize, /oauth/callback, /oauth/token");
     info!("Protected endpoints require Bearer token validation");

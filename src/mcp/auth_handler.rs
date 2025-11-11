@@ -30,7 +30,10 @@ impl AuthHandler {
         pkce_verifier: PkceCodeVerifier,
     ) -> Result<String, Box<dyn std::error::Error>> {
         // Exchange code for tokens
-        let cookie_data = self.oauth_client.exchange_code_for_token(&code.to_string(), &pkce_verifier.secret()).await
+        let cookie_data = self
+            .oauth_client
+            .exchange_code_for_token(&code.to_string(), pkce_verifier.secret())
+            .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
         // Convert CookieData to TokenSet for storage

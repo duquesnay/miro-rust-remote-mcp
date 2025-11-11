@@ -10,9 +10,26 @@ use tower::ServiceExt;
 /// Test that metadata endpoint returns RFC 9728 Protected Resource Metadata
 #[tokio::test]
 async fn test_metadata_endpoint_returns_rfc9728_format() {
-    // Create router with metadata endpoint
-    let app = Router::new().route("/.well-known/oauth-protected-resource",
-        axum::routing::get(oauth_metadata));
+    use miro_mcp_server::Config;
+    use std::sync::Arc;
+
+    // Create test config
+    let config = Arc::new(Config {
+        client_id: "test_client_id".to_string(),
+        client_secret: "test_client_secret".to_string(),
+        redirect_uri: "http://localhost:3010/oauth/callback".to_string(),
+        encryption_key: [0u8; 32],
+        port: 3010,
+        base_url: Some("http://localhost:3010".to_string()),
+    });
+
+    // Create router with metadata endpoint and state
+    let app = Router::new()
+        .route(
+            "/.well-known/oauth-protected-resource",
+            axum::routing::get(oauth_metadata),
+        )
+        .with_state(config);
 
     // Make request to metadata endpoint
     let response = app
@@ -99,8 +116,26 @@ async fn test_metadata_endpoint_returns_rfc9728_format() {
 /// Test that metadata does NOT include RFC 8414 Authorization Server fields
 #[tokio::test]
 async fn test_metadata_does_not_include_rfc8414_fields() {
-    let app = Router::new().route("/.well-known/oauth-protected-resource",
-        axum::routing::get(oauth_metadata));
+    use miro_mcp_server::Config;
+    use std::sync::Arc;
+
+    // Create test config
+    let config = Arc::new(Config {
+        client_id: "test_client_id".to_string(),
+        client_secret: "test_client_secret".to_string(),
+        redirect_uri: "http://localhost:3010/oauth/callback".to_string(),
+        encryption_key: [0u8; 32],
+        port: 3010,
+        base_url: Some("http://localhost:3010".to_string()),
+    });
+
+    // Create router with metadata endpoint and state
+    let app = Router::new()
+        .route(
+            "/.well-known/oauth-protected-resource",
+            axum::routing::get(oauth_metadata),
+        )
+        .with_state(config);
 
     let response = app
         .oneshot(
@@ -136,48 +171,116 @@ async fn test_metadata_does_not_include_rfc8414_fields() {
 #[tokio::test]
 async fn test_www_authenticate_includes_resource_metadata() {
     use axum::http::header::WWW_AUTHENTICATE;
-    use miro_mcp_server::{http_server::create_http_server, TokenValidator};
+    use miro_mcp_server::{http_server::create_app_adr002, Config, TokenValidator};
     use std::sync::Arc;
 
     // Create mock token validator (won't be called in this test)
     let token_validator = Arc::new(TokenValidator::new());
 
+    // Create test config
+    let config = Arc::new(Config {
+        client_id: "test_client_id".to_string(),
+        client_secret: "test_client_secret".to_string(),
+        redirect_uri: "http://localhost:3010/oauth/callback".to_string(),
+        encryption_key: [0u8; 32],
+        port: 3010,
+        base_url: Some("http://localhost:3010".to_string()),
+    });
+
     // Create app with bearer middleware
-    let app = create_http_server(token_validator);
+    #[cfg(feature = "oauth-proxy")]
+    {
+        use miro_mcp_server::oauth::cookie_manager::CookieManager;
+        use miro_mcp_server::oauth::proxy_provider::MiroOAuthProvider;
 
-    // Make request without auth token
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/mcp")
-                .method("POST")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"jsonrpc":"2.0","method":"tools/list","id":1}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+        let oauth_provider = Arc::new(MiroOAuthProvider::new(
+            config.client_id.clone(),
+            config.client_secret.clone(),
+            config.redirect_uri.clone(),
+        ));
+        let cookie_manager = Arc::new(CookieManager::new(&config.encryption_key));
 
-    // Should return 401
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager);
 
-    // Check WWW-Authenticate header
-    let www_auth = response
-        .headers()
-        .get(WWW_AUTHENTICATE)
-        .expect("Should have WWW-Authenticate header")
-        .to_str()
-        .unwrap();
+        // Make request without auth token
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/mcp")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","method":"tools/list","id":1}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-    // Should include resource_metadata parameter per RFC 9728
-    assert!(
-        www_auth.contains("resource_metadata="),
-        "WWW-Authenticate should include resource_metadata parameter, got: {}",
-        www_auth
-    );
-    assert!(
-        www_auth.contains("/.well-known/oauth-protected-resource"),
-        "resource_metadata should point to metadata endpoint, got: {}",
-        www_auth
-    );
+        // Should return 401
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // Check WWW-Authenticate header
+        let www_auth = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .expect("Should have WWW-Authenticate header")
+            .to_str()
+            .unwrap();
+
+        // Should include resource_metadata parameter per RFC 9728
+        assert!(
+            www_auth.contains("resource_metadata="),
+            "WWW-Authenticate should include resource_metadata parameter, got: {}",
+            www_auth
+        );
+        assert!(
+            www_auth.contains("/.well-known/oauth-protected-resource"),
+            "resource_metadata should point to metadata endpoint, got: {}",
+            www_auth
+        );
+    }
+
+    #[cfg(not(feature = "oauth-proxy"))]
+    {
+        let app = create_app_adr002(token_validator, config);
+
+        // Make request without auth token
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/mcp")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","method":"tools/list","id":1}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Should return 401
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // Check WWW-Authenticate header
+        let www_auth = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .expect("Should have WWW-Authenticate header")
+            .to_str()
+            .unwrap();
+
+        // Should include resource_metadata parameter per RFC 9728
+        assert!(
+            www_auth.contains("resource_metadata="),
+            "WWW-Authenticate should include resource_metadata parameter, got: {}",
+            www_auth
+        );
+        assert!(
+            www_auth.contains("/.well-known/oauth-protected-resource"),
+            "resource_metadata should point to metadata endpoint, got: {}",
+            www_auth
+        );
+    }
 }

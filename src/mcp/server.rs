@@ -128,7 +128,7 @@ pub struct BulkCreateItemsParams {
 /// MCP server for Miro
 #[derive(Clone)]
 pub struct MiroMcpServer {
-    oauth_client: Arc<MiroOAuthClient>,
+    #[allow(dead_code)]
     miro_client: Arc<MiroClient>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
@@ -147,7 +147,6 @@ impl MiroMcpServer {
         let miro_client = Arc::new(MiroClient::new(token_store, (*oauth_client).clone())?);
 
         Ok(Self {
-            oauth_client,
             miro_client,
             tool_router: Self::tool_router(),
         })

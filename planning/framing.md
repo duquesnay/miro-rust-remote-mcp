@@ -2,25 +2,27 @@
 
 ## Vision
 
-Create a production-ready Model Context Protocol (MCP) server in Rust that enables Claude AI to programmatically create and manipulate Miro boards, with special focus on visualizing agile squad organizational structures. This will be the first OAuth2-enabled Miro MCP server, supporting remote deployment for Claude.ai web interface.
+Build a complete RFC-compliant OAuth2 Authorization Server with Dynamic Client Registration in Rust, enabling secure MCP integration with Miro. The primary goal is creating reusable, properly-separated OAuth infrastructure that can be applied to future projects. Squad visualization is a secondary use case demonstrating the infrastructure's capabilities.
 
 ## Context
 
-**Current State**:
-- Existing Miro MCP servers (TypeScript) use static tokens only
-- No OAuth2 flow implementation exists for Miro MCP
-- Agile coaches manually create organizational diagrams in Miro
+**Primary Goal**: Build proper OAuth infrastructure (reusable foundation)
+- Complete RFC 6749 OAuth2 Authorization Code Flow implementation
+- Dynamic Client Registration (RFC 7591)
+- Separation of concerns: Miro configuration decoupled from Claude.ai
+- Learning/achievement: Full Authorization Server implementation
+- Reusability: Infrastructure usable for future OAuth-enabled projects
 
-**Opportunity**:
-- Developer has OAuth2 + MCP experience (GitHub MCP server)
-- Miro API v2 is well-documented and stable
-- Clear primary use case: agile squad visualization
-- Active Miro credentials available for testing
+**Secondary Goal**: Demonstrate infrastructure with Miro integration
+- MCP server for board manipulation (visual validation of OAuth)
+- Squad visualization as example use case
+- Timeline is flexible - do it right, not fast
 
-**Target Deployment**:
-- Remote MCP server accessible from Claude.ai web interface
-- HTTPS/TLS required for OAuth2 redirect
-- Proper token refresh for long-running sessions
+**Architectural Choice** (ADR-004 + DCR):
+- Authorization Server pattern (vs simpler Resource Server)
+- Server implements full OAuth flow and token management
+- Intentionally more complex to build reusable infrastructure
+- ADR-005 documented alternative approach for reference only
 
 ---
 
@@ -211,33 +213,33 @@ agile_flow:
 
 ## Success Criteria
 
-### Phase 1: Authentication (Epic 1 Complete + ADR-001 Implementation)
-- [ ] User completes OAuth2 authorization flow via browser
+### Phase 1: OAuth2 Authorization Server (PRIMARY GOAL)
+- [ ] RFC 6749 OAuth2 Authorization Code Flow implemented
+- [ ] Dynamic Client Registration (RFC 7591) working
 - [ ] PKCE implemented (code_verifier + code_challenge)
-- [ ] State stored in encrypted httpOnly cookies (10-min TTL)
-- [ ] Access token stored in encrypted httpOnly cookies (1-hour TTL)
-- [ ] Refresh token rotation implemented (if applicable)
-- [ ] Stateless architecture verified (survives cold starts)
-- [ ] All API requests use Bearer token from cookie
+- [ ] Token management (access + refresh) with secure storage
+- [ ] Token refresh flow working correctly
+- [ ] Separation of concerns: Miro config independent of Claude.ai
+- [ ] All OAuth endpoints functional and compliant
+- [ ] Security review passed (Authorization Server scope)
 
-### Phase 2: Basic Operations (Epics 2-3 Complete)
-- [ ] User lists existing Miro boards
-- [ ] User creates new board via Claude prompt
-- [ ] User creates sticky notes, shapes, text, frames
-- [ ] All visual elements appear correctly on board
+### Phase 2: MCP Server Integration (SECONDARY)
+- [ ] MCP server communicates with OAuth infrastructure
+- [ ] All API requests use Bearer tokens correctly
+- [ ] Token expiry handled gracefully
+- [ ] MCP protocol compliance validated
 
-### Phase 3: Primary Use Case (Epics 4-6 Complete)
-- [ ] User creates connectors with styling
-- [ ] User updates and deletes items
-- [ ] User creates 3-squad org chart in <5 minutes via simple prompt
-- [ ] Organizational structure is clear and properly formatted
+### Phase 3: Miro Operations (DEMONSTRATION)
+- [ ] Basic operations: list boards, create board
+- [ ] Visual elements: sticky notes, shapes, text, frames
+- [ ] Connectors and relationships
+- [ ] Update and delete operations
 
-### Phase 4: Production Ready (Epic 7 + Security Review)
-- [ ] Bulk operations reduce latency >50%
-- [ ] Security review passed (no P0/P1 vulnerabilities)
-- [ ] Documentation complete (setup, usage, deployment)
-- [ ] Deployed to accessible HTTPS endpoint
-- [ ] Claude.ai web interface integration tested
+### Phase 4: Use Case Validation (NICE-TO-HAVE)
+- [ ] 3-squad org chart creation works
+- [ ] Bulk operations if needed
+- [ ] Documentation of OAuth infrastructure
+- [ ] Deployment documentation
 
 ---
 
@@ -259,12 +261,12 @@ agile_flow:
 - Documentation updated
 
 **Production Release**:
-- All critical epics complete (1-6)
-- Security review passed
-- Performance acceptable for 50+ item diagrams
+- OAuth2 Authorization Server complete and RFC-compliant
+- Security review passed (Authorization Server scope)
 - OAuth2 flow tested end-to-end
-- Deployment documentation complete
-- Claude.ai web interface integration verified
+- MCP integration functional
+- Infrastructure documented for reuse
+- Deployment successful
 
 ---
 
@@ -293,44 +295,52 @@ agile_flow:
 
 ## Development Phases
 
-### Phase 1: Foundation (Sprint 1 - ~3 days)
-**Focus**: Authentication + Board Management
-- Epic 1: OAuth2 implementation
-- Epic 2: Board operations
-- Start Epic 3: Basic visual elements
+### Phase 1: OAuth2 Authorization Server (PRIMARY)
+**Focus**: Complete RFC-compliant OAuth infrastructure
+- OAuth2 Authorization Code Flow (RFC 6749)
+- Dynamic Client Registration (RFC 7591)
+- Token management (access + refresh)
+- PKCE implementation
+- Security review (Authorization Server scope)
+- **Timeline**: Take the time needed to do it right
 
-### Phase 2: Visualization (Sprint 2 - ~3 days)
-**Focus**: Complete visual toolset + primary use case
-- Complete Epic 3: All visual elements
-- Epic 4: Connectors and relationships
-- Epic 5: Item management
-- Epic 6: Squad visualization orchestration
+### Phase 2: MCP Integration (SECONDARY)
+**Focus**: Connect MCP server to OAuth infrastructure
+- MCP protocol compliance
+- Token-based API client
+- Basic Miro operations
+- **Timeline**: After OAuth is solid
 
-### Phase 3: Production (Sprint 3 - ~2 days)
-**Focus**: Optimization + deployment
-- Epic 7: Bulk operations
-- Security review
+### Phase 3: Demonstration (NICE-TO-HAVE)
+**Focus**: Validate infrastructure with real use case
+- Squad visualization
+- Bulk operations if needed
 - Documentation
-- Deployment
-- Claude.ai integration testing
+- **Timeline**: When infrastructure is complete
 
-**Total Timeline**: ~8 working days (matches 62h estimate)
+**Philosophy**: Quality over speed - building reusable infrastructure
 
 ---
 
 ## Notes
 
 **Developer Context**:
-- Has built GitHub MCP server with OAuth2 previously
-- Familiar with authorization code flow, token management
-- Comfortable with Rust and async patterns
-- Target: remote MCP for Claude.ai web interface
+- Building complete OAuth2 Authorization Server as learning/infrastructure project
+- Goal: Reusable OAuth infrastructure for future projects
+- Separation of concerns: Miro config independent of Claude.ai
+- Timeline: Flexible - prioritizing correctness over speed
+
+**Value Proposition**:
+1. **Reusability**: OAuth infrastructure usable beyond Miro
+2. **Learning**: Complete Authorization Server implementation
+3. **Separation**: Decoupled OAuth configuration
+4. **Foundation**: Proper infrastructure for future OAuth-enabled projects
 
 **Testing Strategy**:
-- Use provided tokens for initial API exploration
-- Implement OAuth2 flow after API client proven working
-- Test token refresh using short-lived test tokens
-- Manual testing with Claude.ai interface before release
+- Focus on OAuth flow correctness first
+- MCP integration second
+- Use case validation third
+- Take time to build it right
 
 **Infrastructure & Deployment**
 

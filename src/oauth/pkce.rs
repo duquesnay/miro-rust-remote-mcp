@@ -35,7 +35,10 @@ pub fn generate_pkce_pair() -> PkcePair {
     // Base64url encode challenge (no padding)
     let challenge = URL_SAFE_NO_PAD.encode(challenge_bytes);
 
-    PkcePair { verifier, challenge }
+    PkcePair {
+        verifier,
+        challenge,
+    }
 }
 
 #[cfg(test)]

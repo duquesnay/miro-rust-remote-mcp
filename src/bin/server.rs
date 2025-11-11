@@ -12,9 +12,7 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "oauth-proxy")]
-use miro_mcp_server::oauth::{
-    cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider,
-};
+use miro_mcp_server::oauth::{cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
