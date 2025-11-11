@@ -438,3 +438,435 @@
 **Source**: USER_REQUEST
 
 ---
+### AUTH4: Developer adds OAuth state via encrypted cookies (vs in-memory HashMap)
+
+**User**: Developer implementing stateless OAuth flow
+**Outcome**: OAuth state persisted across requests without server-side storage
+**Context**: In-memory HashMap loses state on container restart, blocking OAuth completion
+
+**Acceptance Criteria**:
+- Encrypted cookie stores OAuth state (PKCE verifier, nonce)
+- AES-256-GCM encryption implemented
+- HttpOnly, Secure, SameSite=Lax flags set
+- Cookie expiry: 5 minutes (OAuth flow duration)
+- State validated on callback to prevent CSRF
+
+**Implementation Notes**:
+- Foundation for stateless architecture (ADR-003)
+- Enables horizontal scaling on Scaleway Containers
+- Reusable for ACCESS_TOKEN cookie storage (AUTH5)
+
+**Source**: ADR-003 decision (stateless OAuth)
+
+---
+
+### AUTH5: User's access token stored in encrypted cookies (vs server-side storage)
+
+**User**: Claude Desktop/Web maintaining authenticated session
+**Outcome**: Access token available across requests without database
+**Context**: Stateless architecture requires client-side token storage
+
+**Acceptance Criteria**:
+- Encrypted cookie stores access_token securely
+- Token encrypted with AES-256-GCM
+- HttpOnly flag prevents JavaScript access
+- Cookie expiry matches token expiry (3600s)
+- Refresh token stored separately (higher security)
+
+**Implementation Notes**:
+- Note: Superseded by ADR-003 (HTTP Resource Server mode uses Bearer tokens)
+- Cookie approach still useful for local development (Claude Desktop)
+- Production uses Authorization: Bearer header (AUTH7)
+
+**Source**: ADR-003 evolution
+
+---
+
+### AUTH6: Claude discovers OAuth via metadata endpoint (vs manual configuration)
+
+**User**: Claude.ai attempting to connect to MCP server
+**Outcome**: Automatically discovers OAuth endpoints and initiates flow
+**Context**: MCP spec requires /.well-known/oauth-protected-resource endpoint
+
+**Acceptance Criteria**:
+- GET /.well-known/oauth-protected-resource returns valid JSON
+- Metadata includes: authorization_endpoint, token_endpoint, issuer
+- Endpoints point to correct URLs (Miro or proxy depending on pattern)
+- Claude.ai successfully discovers and uses endpoints
+- HTTPS accessible from internet
+
+**Implementation Notes**:
+- RFC 8414 OAuth 2.0 Authorization Server Metadata compliance
+- Critical for Claude.ai web integration
+- Updated in ADR-004 to point to proxy endpoints (AUTH14)
+
+**Source**: MCP OAuth2 specification
+
+---
+
+### AUTH7: Server extracts Bearer tokens from Authorization header (vs cookies)
+
+**User**: Claude.ai sending authenticated requests to MCP server
+**Outcome**: Server validates requests using Bearer token from header
+**Context**: HTTP Resource Server pattern (ADR-003) requires Bearer tokens
+
+**Acceptance Criteria**:
+- Extract Authorization: Bearer <token> from HTTP headers
+- Validate token format before introspection
+- Return 401 Unauthorized if header missing
+- Return 401 Unauthorized if token malformed
+- Pass valid tokens to introspection (AUTH8)
+
+**Implementation Notes**:
+- Replaces cookie-based auth from AUTH5
+- Standard OAuth2 Resource Server pattern
+- Middleware applied to all MCP endpoints
+
+**Source**: ADR-003 (HTTP Resource Server mode)
+
+---
+
+### AUTH8: Server validates tokens with Miro introspection API (vs trusting Claude)
+
+**User**: MCP server verifying token authenticity
+**Outcome**: Only valid Miro tokens accepted for API requests
+**Context**: Cannot trust tokens from Claude.ai without validation
+
+**Acceptance Criteria**:
+- POST to Miro /v1/oauth/token/introspect endpoint
+- Validate active=true in response
+- Verify scopes match required permissions
+- Return 401 if introspection fails or token inactive
+- Handle Miro API errors gracefully
+
+**Implementation Notes**:
+- Security critical: prevents token forgery
+- 100ms latency per validation (addressed in AUTH9)
+- Uses MIRO_CLIENT_ID for introspection auth
+
+**Source**: ADR-003 security requirement
+
+---
+
+### AUTH9: Token validation cached with 5-minute TTL (vs 100ms latency per request)
+
+**User**: Developer experiencing fast MCP tool responses
+**Outcome**: Sub-10ms authentication overhead (vs 100ms per request)
+**Context**: Introspection API adds 100ms latency to every MCP call
+
+**Acceptance Criteria**:
+- In-memory cache for introspection results
+- TTL: 5 minutes (balance security vs performance)
+- Cache key: SHA-256 hash of token
+- Cache invalidation on 401 from Miro API
+- Performance: ≤10ms for cache hit
+
+**Implementation Notes**:
+- Uses DashMap for concurrent access
+- Cache miss: 100ms (introspection API call)
+- Cache hit: <1ms (in-memory lookup)
+- Acceptable security trade-off: 5min window
+
+**Source**: Performance optimization (ADR-003)
+
+---
+
+### FRAME1: User creates items directly in frames (vs manual move after creation)
+
+**User**: Claude AI creating organized squad visualizations
+**Outcome**: Items appear inside frames without extra move operation
+**Context**: Cleaner API, reduces round-trips for grouped content
+
+**Acceptance Criteria**:
+- Create item with parent.id = frame_id in request
+- Item appears inside specified frame automatically
+- No separate move operation needed
+- Works for sticky_note, shape, text, connector types
+- Frame boundary enforced by Miro
+
+**Implementation Notes**:
+- Uses parent field in POST /v2/boards/{board_id}/items
+- Simplifies bulk creation of squad structures
+- Foundation for FRAME2-4 operations
+
+**Source**: Miro API v2 feature
+
+---
+
+### FRAME2: User moves items between frames for reorganization
+
+**User**: Claude AI reorganizing squad structures
+**Outcome**: Items repositioned to different frames dynamically
+**Context**: Users want to reorganize without recreating items
+
+**Acceptance Criteria**:
+- PATCH /v2/boards/{board_id}/items/{item_id} with parent.id
+- Item moves from current frame to target frame
+- Item position updated relative to new parent
+- Moving to board root: set parent to null
+- Works across all item types
+
+**Implementation Notes**:
+- Extends ITEM2 (update operation)
+- Parent change triggers Miro re-layout
+- Critical for iterative squad refinement
+
+**Source**: Miro API v2 feature
+
+---
+
+### FRAME3: User filters items by containing frame
+
+**User**: Claude AI analyzing specific squad content
+**Outcome**: Lists only items within specified frame
+**Context**: Users want to inspect/modify specific squad without noise
+
+**Acceptance Criteria**:
+- GET /v2/boards/{board_id}/items?parent_id=<frame_id>
+- Returns items contained in specified frame
+- Excludes items in other frames or board root
+- Supports pagination for large frames
+- Works with type filtering (?type=sticky_note&parent_id=X)
+
+**Implementation Notes**:
+- Combines with ITEM1 filtering
+- Enables focused squad operations
+- Foundation for squad-level analytics
+
+**Source**: Miro API v2 feature
+
+---
+
+### FRAME4: User removes items from frames to board root
+
+**User**: Claude AI extracting items from squad containers
+**Outcome**: Items moved to board root (ungrouped)
+**Context**: Users want to ungroup items for reorganization
+
+**Acceptance Criteria**:
+- PATCH /v2/boards/{board_id}/items/{item_id} with parent=null
+- Item moves from frame to board root
+- Position preserved (or updated to absolute coordinates)
+- Frame no longer owns item
+- Item remains on board (not deleted)
+
+**Implementation Notes**:
+- Special case of FRAME2 (move to null parent)
+- Inverse of FRAME1 operation
+- Completes frame lifecycle
+
+**Source**: Miro API v2 feature
+
+---
+
+### LAYER2: User understands item stacking order when reading/creating items
+
+**User**: Claude AI creating layered visualizations
+**Outcome**: Created items stack predictably (new items on top)
+**Context**: Visual hierarchy matters for diagrams (backgrounds vs foregrounds)
+
+**Acceptance Criteria**:
+- GET /v2/boards/{board_id}/items returns items with position.z_index
+- z_index indicates stacking order (higher = on top)
+- Newly created items have highest z_index (appear on top)
+- Reading order documented for users
+- Note: Cannot programmatically change z-order (API limitation)
+
+**Implementation Notes**:
+- Read-only understanding (z-order control is Web SDK only)
+- Inform users of stacking behavior
+- Workaround: Delete and recreate in desired order
+
+**Source**: Miro API v2 limitation (LAYER1.1/1.2 blocked)
+
+---
+
+### TECH2: Developer modifies parent construction in single location (vs 5 duplications)
+
+**User**: Developer adding new item types or parent logic
+**Outcome**: Parent field logic centralized for maintainability
+**Context**: Parent construction duplicated across 5 item creation functions
+
+**Acceptance Criteria**:
+- Create `src/miro/parent.rs` module with `build_parent()` function
+- All item creation calls `build_parent(parent_id: Option<String>)`
+- Function returns: Some(Parent { id }) if parent_id provided, None otherwise
+- Delete duplicated logic from sticky_note, shape, text, connector, frame
+- Add unit tests for parent construction edge cases
+
+**Implementation Notes**:
+- DRY principle application
+- Reduces bug surface (single source of truth)
+- Enables future parent validation logic
+
+**Source**: Code refactoring (TEST1 discovered duplication)
+
+---
+
+### TEST1: Parent filtering verified through integration tests (vs unit-only coverage)
+
+**User**: Developer ensuring frame operations work end-to-end
+**Outcome**: Integration tests validate real Miro API behavior
+**Context**: Unit tests mocked parent behavior, missed API quirks
+
+**Acceptance Criteria**:
+- Integration test: Create frame, create item with parent_id
+- Verify item appears inside frame (GET items?parent_id=<frame>)
+- Test move between frames (PATCH parent.id)
+- Test move to root (PATCH parent=null)
+- Test filtering by parent_id
+- All tests use real Miro API (test board)
+
+**Implementation Notes**:
+- Exposed TECH2 duplication during implementation
+- Integration tests catch API contract changes
+- Run against test Miro account
+
+**Source**: Quality assurance (found during FRAME1-4 implementation)
+
+---
+
+### TECH4: System validates sort_by values explicitly (vs silent failures)
+
+**User**: Developer catching invalid sort parameter early
+**Outcome**: Clear error message for invalid sort_by instead of silent failure
+**Context**: Miro API silently ignores invalid sort values
+
+**Acceptance Criteria**:
+- Validate sort_by against allowed values: ["created_at", "modified_at"]
+- Return 400 Bad Request if invalid value provided
+- Error message: "sort_by must be one of: created_at, modified_at"
+- Add unit test for validation logic
+- Document allowed values in tool schema
+
+**Implementation Notes**:
+- Fail-fast principle
+- Improves developer experience
+- Prevents silent bugs
+
+**Source**: Code quality improvement
+
+---
+
+### DEPLOY2: System deploys to Scaleway Containers successfully
+
+**User**: Developer deploying production MCP server
+**Outcome**: MCP server running on Scaleway with HTTPS and OAuth
+**Context**: DEPLOY1 planned Containers, DEPLOY2 executes deployment
+
+**Acceptance Criteria**:
+- Container image built and pushed to Scaleway registry
+- Container deployed to Scaleway Containers platform
+- HTTPS endpoint accessible: https://[container].scw.cloud
+- Environment variables configured: MIRO_CLIENT_ID, MIRO_CLIENT_SECRET
+- OAuth redirect URI points to production domain
+- Health check endpoint responds (GET /health)
+- MCP protocol endpoint responds (POST /mcp)
+
+**Implementation Notes**:
+- Uses deploy_scaleway.sh script
+- Container: miro-mcp at flyagileapipx8njvei-miro-mcp.functions.fnc.fr-par.scw.cloud
+- MCP protocol support added (PROTO1)
+- Foundation for OAuth flow testing (TEST2, TEST3)
+
+**Source**: Production deployment
+
+---
+
+### CI1: Developer receives automated test feedback on every push (vs manual local testing)
+
+**User**: Developer pushing code changes
+**Outcome**: GitHub Actions runs tests automatically, reports failures
+**Context**: Manual testing slow and error-prone
+
+**Acceptance Criteria**:
+- .github/workflows/ci.yml configured
+- Triggers on push to main and pull requests
+- Runs: cargo test, cargo clippy, cargo fmt --check
+- Reports test failures as GitHub status check
+- Fast feedback: <5 minutes for standard PR
+- Blocks merge if tests fail (optional branch protection)
+
+**Implementation Notes**:
+- Standard Rust CI setup
+- Caches dependencies for speed
+- Runs on ubuntu-latest
+- Foundation for CD pipeline
+
+**Source**: Development automation
+
+---
+
+### TECH3: Developer adds complex items via builder pattern (vs 9-parameter functions)
+
+**User**: Developer creating items with many optional fields
+**Outcome**: Readable, maintainable item creation code
+**Context**: Functions with 9+ parameters unreadable and error-prone
+
+**Acceptance Criteria**:
+- Builder structs for StickyNote, Shape, Connector, Frame
+- Fluent API: `StickyNote::new(board_id).content("text").color(Color::Yellow).build()`
+- Required fields enforced at build time (compile-time safety)
+- Optional fields have sensible defaults
+- All existing item creation refactored to use builders
+- Documentation examples use builder pattern
+
+**Implementation Notes**:
+- Rust builder pattern (derive-builder crate or manual)
+- Improves readability of bulk creation (BULK1)
+- Type-safe alternative to HashMap<String, Value>
+
+**Source**: Code quality improvement
+
+---
+
+### TECH5: Developer adds new tools without modifying routing (vs hardcoded match)
+
+**User**: Developer adding new MCP tools
+**Outcome**: Tools registered declaratively, router auto-discovers
+**Context**: Hardcoded match statement in mcp/server.rs requires edit for each tool
+
+**Acceptance Criteria**:
+- Tool registry pattern: `registry.register(ListBoardsTool)`
+- Router iterates registry for tools/list
+- Router dispatches tools/call via registry lookup
+- Adding tool = implement trait + register (no router changes)
+- All existing tools refactored to registry pattern
+
+**Implementation Notes**:
+- Trait-based tool abstraction
+- Dynamic dispatch or macro-generated registry
+- Reduces coupling between tools and router
+- Enables plugin architecture (future)
+
+**Source**: Architecture improvement
+
+---
+
+### OBS1: Developer diagnoses production auth failures through structured logging
+
+**User**: Developer troubleshooting OAuth failures in production
+**Outcome**: Quickly identifies root cause via correlation IDs and structured logs
+**Context**: Production auth errors opaque without context
+
+**Acceptance Criteria**:
+- Correlation ID generated for each request
+- Correlation ID propagated through OAuth flow (/authorize → /callback → /token)
+- Structured JSON logging for all auth events:
+  - OAuth initiation (correlation_id, timestamp)
+  - Miro redirect (correlation_id, state, pkce_challenge)
+  - Callback received (correlation_id, code, state_valid)
+  - Token exchange (correlation_id, success/failure)
+- Logs never contain tokens/secrets (even in debug mode)
+- DEBUGGING.md runbook for common failure modes
+- Test: Induce failure, grep logs by correlation_id, identify cause in <2 minutes
+
+**Implementation Notes**:
+- Uses tracing/slog for structured logging
+- Correlation ID in X-Correlation-ID header
+- Log levels: ERROR (failures), INFO (flow steps), DEBUG (internals)
+- Production log retention: 7 days minimum
+
+**Source**: Production debugging (completed 2025-11-11)
+
+---

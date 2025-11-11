@@ -275,6 +275,74 @@ Please clarify which items are actively being worked on.
   - **Dependencies**: DEPLOY2 (deployment script exists)
   - **Complexity**: 0.5 (add verification step to script)
 
+- [ ] **DOCKER1**: Container isolates system resources via non-root user
+  - **Current State**: Dockerfile runs binary as root user (UID 0)
+  - **Target State**: Binary executes as mcp user (UID 1000) per deployment.md specification
+  - **Value**: Reduces container escape attack surface (security defense-in-depth)
+  - **Acceptance Criteria**:
+    - Add USER directive to Dockerfile: `USER 1000:1000`
+    - Create mcp user in build stage before copying binary
+    - Verify binary runs as UID 1000 with `docker exec <container> whoami`
+    - Test file permissions: /app/data writable by UID 1000
+    - Container starts successfully in Scaleway with non-root user
+  - **Dependencies**: None (Dockerfile change only)
+  - **Complexity**: 0.3 (simple USER directive + permission adjustment)
+
+- [ ] **DOCKER2**: Container preserves tokens across restarts automatically
+  - **Current State**: /app/data not declared as VOLUME, data loss risk on container recreation
+  - **Target State**: VOLUME directive ensures /app/data persists across container lifecycle
+  - **Value**: Prevents user re-authentication after deployments (vs token loss)
+  - **Acceptance Criteria**:
+    - Add VOLUME directive to Dockerfile: `VOLUME ["/app/data"]`
+    - Document volume mount in deployment.md for Scaleway Containers
+    - Test: Deploy update, verify tokens persist without re-authentication
+    - Verify volume permissions compatible with UID 1000 (DOCKER1)
+    - Update DEBUGGING.md: "Lost tokens after deployment" → check volume mount
+  - **Dependencies**: DOCKER1 (user permissions must match volume)
+  - **Complexity**: 0.2 (VOLUME directive + documentation)
+
+- [ ] **DOCKER3**: System detects degraded containers automatically
+  - **Current State**: No HEALTHCHECK directive, Scaleway cannot monitor container health
+  - **Target State**: Health endpoint polled every 30s, automatic restart on failure
+  - **Value**: Automatic recovery from degraded states (vs manual intervention)
+  - **Acceptance Criteria**:
+    - Add HEALTHCHECK directive: `HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:${PORT}/health || exit 1`
+    - Health endpoint returns HTTP 200 with JSON: `{"status": "healthy"}`
+    - Test: Stop MCP server process inside container → verify restart within 60s
+    - Scaleway Console shows "Healthy" status after deployment
+    - Document health check behavior in deployment.md
+  - **Dependencies**: None (uses existing /health endpoint)
+  - **Complexity**: 0.3 (HEALTHCHECK directive + testing)
+
+- [ ] **DOCKER4**: Deployment completes 20% faster via optimized binary
+  - **Current State**: Binary includes debug symbols (~45MB with symbols)
+  - **Target State**: Stripped binary reduces size to ~36MB (20% reduction)
+  - **Value**: Faster deployments and lower storage costs (marginal but free optimization)
+  - **Acceptance Criteria**:
+    - Add `RUN strip /app/miro-mcp-server` to Dockerfile after binary copy
+    - Measure before: `ls -lh target/release/miro-mcp-server` (record size)
+    - Measure after: verify stripped binary ≤36MB
+    - Test: Stripped binary runs correctly in container (no runtime errors)
+    - Verify: Docker image size reduced proportionally
+    - Document: No impact on debugging (use debug builds locally, stripped in production)
+  - **Dependencies**: None (optimization only)
+  - **Complexity**: 0.2 (single RUN directive)
+
+- [ ] **CI2**: Developer publishes new version via git tag (vs manual GitHub release creation)
+  - **Current State**: GitHub Actions CI exists (ci.yml) with tests/clippy/fmt but no version-triggered automation
+  - **Target State**: Tagging triggers automated release build and GitHub release creation
+  - **Value**: Streamlines release process from 30min manual to 5min automated
+  - **Acceptance Criteria**:
+    - Workflow triggers on `v*` tags (e.g., `git tag v0.2.0 && git push --tags`)
+    - Builds release binary with `cargo build --release`
+    - Creates GitHub release with auto-generated changelog from commits
+    - Uploads optimized binary artifact to release
+    - (Optional) Triggers deployment to Scaleway if tag matches production criteria
+    - Test: Create v0.1.1 tag, verify release appears on GitHub with binary artifact
+  - **Dependencies**: CI1 (existing CI workflow)
+  - **Complexity**: 1.0 (CI workflow creation)
+  - **Priority**: Medium (production-readiness capability, not P0 blocker)
+
 ### Documentation (Quality Enablers)
 
 ⚠️ **NOTE**: Documentation items reframed as developer capabilities (time-to-understanding metrics)
