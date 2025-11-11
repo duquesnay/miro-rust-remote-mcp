@@ -15,13 +15,11 @@ use super::{pkce::generate_pkce_pair, types::OAuthState};
 /// Cookie name for OAuth state during authorization flow
 const STATE_COOKIE_NAME: &str = "miro_oauth_state";
 
-/// Cookie name for pending authorization code (temporary storage between callback and token endpoint)
-const PENDING_CODE_COOKIE_NAME: &str = "miro_pending_code";
-
 /// OAuth state cookie max age (5 minutes for authorization flow)
 const STATE_COOKIE_MAX_AGE: i64 = 300; // 5 minutes in seconds
 
-/// Pending code cookie max age (5 minutes - code must be exchanged quickly)
+/// Pending code max age (5 minutes - code must be exchanged quickly)
+/// Used for server-side code storage expiration
 const PENDING_CODE_MAX_AGE: i64 = 300; // 5 minutes in seconds
 
 /// Query parameters for OAuth authorization request (RFC 6749)
@@ -221,22 +219,14 @@ pub async fn callback_handler(
         "Received authorization code from Miro"
     );
 
-    // Store code + verifier temporarily for token endpoint to use
+    // Store code + verifier in server-side storage for token endpoint to use
     let pending_exchange = super::types::PendingCodeExchange {
         code: code.clone(),
         code_verifier: oauth_state.code_verifier.clone(),
         expires_at: Utc::now() + chrono::Duration::seconds(PENDING_CODE_MAX_AGE),
     };
 
-    let encrypted_pending = cookie_manager.encrypt(&pending_exchange).map_err(|e| {
-        OAuthEndpointError::CookieError(format!("Failed to encrypt pending code: {}", e))
-    })?;
-
-    // Build response: store code in cookie and redirect to Claude.ai WITH the code
-    let pending_code_cookie = format!(
-        "{}={}; HttpOnly; Secure; SameSite=Lax; Max-Age={}; Path=/",
-        PENDING_CODE_COOKIE_NAME, encrypted_pending, PENDING_CODE_MAX_AGE
-    );
+    state.code_storage.store(code, pending_exchange).await;
 
     // Clear state cookie (no longer needed)
     let clear_state_cookie = format!(
@@ -258,7 +248,6 @@ pub async fn callback_handler(
     Ok((
         StatusCode::FOUND,
         [
-            (header::SET_COOKIE, pending_code_cookie),
             (header::SET_COOKIE, clear_state_cookie),
             (header::LOCATION, redirect_url),
         ],
@@ -300,7 +289,6 @@ pub async fn token_handler(
     axum::extract::Form(token_request): axum::extract::Form<super::types::TokenRequest>,
 ) -> Result<Json<TokenResponseRfc6749>, OAuthEndpointError> {
     let provider = &state.oauth_provider;
-    let cookie_manager = &state.cookie_manager;
     let config = &state.config;
     let client_registry = &state.client_registry;
 
@@ -346,27 +334,22 @@ pub async fn token_handler(
 
     info!(client_id = %token_request.client_id, "Client authenticated successfully");
 
-    // Extract pending code exchange from cookie
-    let pending_cookie = extract_cookie(&headers, PENDING_CODE_COOKIE_NAME).ok_or_else(|| {
-        OAuthEndpointError::Unauthorized(
-            "Pending code cookie not found - authorization flow not completed".to_string(),
-        )
-    })?;
-
-    let pending_exchange: super::types::PendingCodeExchange =
-        cookie_manager.decrypt(&pending_cookie).map_err(|e| {
-            OAuthEndpointError::Unauthorized(format!("Failed to decrypt pending code: {}", e))
+    // Retrieve pending code exchange from server-side storage
+    let pending_exchange = state
+        .code_storage
+        .take(&token_request.code)
+        .await
+        .ok_or_else(|| {
+            warn!(
+                code_length = token_request.code.len(),
+                "Authorization code not found or expired"
+            );
+            OAuthEndpointError::Unauthorized(
+                "Authorization code not found or expired - may have been used already or flow not completed".to_string(),
+            )
         })?;
 
-    // Check if code has expired
-    let now = Utc::now();
-    if now > pending_exchange.expires_at {
-        return Err(OAuthEndpointError::Unauthorized(
-            "Authorization code has expired".to_string(),
-        ));
-    }
-
-    // Validate code matches what we received from callback
+    // Validate code matches (redundant but keeps consistency)
     if token_request.code != pending_exchange.code {
         warn!("Authorization code mismatch");
         return Err(OAuthEndpointError::Unauthorized(
@@ -385,6 +368,7 @@ pub async fn token_handler(
         })?;
 
     // Calculate token expiration
+    let now = Utc::now();
     let expires_in = (cookie_data.expires_at - now).num_seconds().max(0);
 
     info!(

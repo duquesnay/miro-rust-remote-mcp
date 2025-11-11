@@ -232,6 +232,7 @@ async fn test_bearer_auth_returns_401_with_www_authenticate() {
     // Create app with bearer middleware
     #[cfg(feature = "oauth-proxy")]
     {
+        use miro_mcp_server::oauth::code_storage::CodeStorage;
         use miro_mcp_server::oauth::cookie_manager::CookieManager;
         use miro_mcp_server::oauth::proxy_provider::MiroOAuthProvider;
 
@@ -241,8 +242,9 @@ async fn test_bearer_auth_returns_401_with_www_authenticate() {
             config.redirect_uri.clone(),
         ));
         let cookie_manager = Arc::new(CookieManager::new(&config.encryption_key));
+        let code_storage = CodeStorage::new();
 
-        let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager);
+        let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager, code_storage);
 
         // Make request without auth token
         let response = app

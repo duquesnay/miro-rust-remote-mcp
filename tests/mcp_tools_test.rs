@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tower::ServiceExt;
 
 #[cfg(feature = "oauth-proxy")]
+use miro_mcp_server::oauth::code_storage::CodeStorage;
+#[cfg(feature = "oauth-proxy")]
 use miro_mcp_server::oauth::cookie_manager::CookieManager;
 #[cfg(feature = "oauth-proxy")]
 use miro_mcp_server::oauth::proxy_provider::MiroOAuthProvider;
@@ -32,8 +34,9 @@ fn create_test_app() -> Router {
             config.redirect_uri.clone(),
         ));
         let cookie_manager = Arc::new(CookieManager::new(&config.encryption_key));
+        let code_storage = CodeStorage::new();
 
-        create_app_adr002(token_validator, config, oauth_provider, cookie_manager)
+        create_app_adr002(token_validator, config, oauth_provider, cookie_manager, code_storage)
     }
 
     #[cfg(not(feature = "oauth-proxy"))]

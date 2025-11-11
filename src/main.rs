@@ -10,7 +10,11 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "oauth-proxy")]
-use miro_mcp_server::oauth::{cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider};
+use miro_mcp_server::oauth::{
+    code_storage::{start_cleanup_task, CodeStorage},
+    cookie_manager::CookieManager,
+    proxy_provider::MiroOAuthProvider,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,6 +58,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 http_config.redirect_uri.clone(),
             ));
             let cookie_manager = Arc::new(CookieManager::new(&http_config.encryption_key));
+            let code_storage = CodeStorage::new();
+
+            // Start background cleanup task for expired authorization codes
+            start_cleanup_task(code_storage.clone());
+            info!("Authorization code cleanup task started");
 
             if let Err(e) = run_server_adr002(
                 http_port,
@@ -61,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 http_config,
                 oauth_provider,
                 cookie_manager,
+                code_storage,
             )
             .await
             {

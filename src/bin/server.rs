@@ -12,7 +12,11 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "oauth-proxy")]
-use miro_mcp_server::oauth::{cookie_manager::CookieManager, proxy_provider::MiroOAuthProvider};
+use miro_mcp_server::oauth::{
+    code_storage::{start_cleanup_task, CodeStorage},
+    cookie_manager::CookieManager,
+    proxy_provider::MiroOAuthProvider,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,6 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "oauth-proxy")]
     let cookie_manager = Arc::new(CookieManager::new(&config.encryption_key));
 
+    #[cfg(feature = "oauth-proxy")]
+    let code_storage = CodeStorage::new();
+
+    // Start background cleanup task for expired authorization codes
+    #[cfg(feature = "oauth-proxy")]
+    {
+        start_cleanup_task(code_storage.clone());
+        info!("Authorization code cleanup task started");
+    }
+
     // Get port from environment or use config default
     let port = std::env::var("PORT")
         .ok()
@@ -72,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Token validator initialized with LRU cache (5-min TTL, 100 capacity)");
     #[cfg(feature = "oauth-proxy")]
-    info!("OAuth proxy components initialized (provider + cookie manager)");
+    info!("OAuth proxy components initialized (provider + cookie manager + code storage)");
     info!("Starting HTTP server on 0.0.0.0:{}", port);
 
     // Start HTTP server
@@ -83,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config,
         oauth_provider,
         cookie_manager,
+        code_storage,
     )
     .await?;
 

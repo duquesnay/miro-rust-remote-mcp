@@ -21,8 +21,8 @@ use uuid::Uuid;
 
 #[cfg(feature = "oauth-proxy")]
 use crate::oauth::{
-    authorize_handler, callback_handler, cookie_manager::CookieManager, dcr::ClientRegistry,
-    proxy_provider::MiroOAuthProvider, register_handler, token_handler,
+    authorize_handler, callback_handler, code_storage::CodeStorage, cookie_manager::CookieManager,
+    dcr::ClientRegistry, proxy_provider::MiroOAuthProvider, register_handler, token_handler,
 };
 
 /// Health check endpoint
@@ -136,6 +136,8 @@ pub struct AppStateADR002 {
     pub cookie_manager: Arc<CookieManager>,
     #[cfg(feature = "oauth-proxy")]
     pub client_registry: ClientRegistry,
+    #[cfg(feature = "oauth-proxy")]
+    pub code_storage: CodeStorage,
 }
 
 /// Bearer token validation middleware for ADR-002
@@ -223,6 +225,7 @@ pub fn create_app_adr002(
     config: Arc<Config>,
     #[cfg(feature = "oauth-proxy")] oauth_provider: Arc<MiroOAuthProvider>,
     #[cfg(feature = "oauth-proxy")] cookie_manager: Arc<CookieManager>,
+    #[cfg(feature = "oauth-proxy")] code_storage: CodeStorage,
 ) -> Router {
     #[cfg(feature = "oauth-proxy")]
     let state = AppStateADR002 {
@@ -231,6 +234,7 @@ pub fn create_app_adr002(
         oauth_provider,
         cookie_manager,
         client_registry: ClientRegistry::new(),
+        code_storage,
     };
 
     #[cfg(not(feature = "oauth-proxy"))]
@@ -314,9 +318,10 @@ pub async fn run_server_adr002(
     config: Arc<Config>,
     #[cfg(feature = "oauth-proxy")] oauth_provider: Arc<MiroOAuthProvider>,
     #[cfg(feature = "oauth-proxy")] cookie_manager: Arc<CookieManager>,
+    #[cfg(feature = "oauth-proxy")] code_storage: CodeStorage,
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "oauth-proxy")]
-    let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager);
+    let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager, code_storage);
 
     #[cfg(not(feature = "oauth-proxy"))]
     let app = create_app_adr002(token_validator, config);
@@ -368,7 +373,8 @@ mod tests {
             config.redirect_uri.clone(),
         ));
         let cookie_manager = Arc::new(CookieManager::new(&config.encryption_key));
-        let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager);
+        let code_storage = CodeStorage::new();
+        let app = create_app_adr002(token_validator, config, oauth_provider, cookie_manager, code_storage);
         assert!(std::mem::size_of_val(&app) > 0);
     }
 
