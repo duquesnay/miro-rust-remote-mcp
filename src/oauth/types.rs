@@ -45,6 +45,20 @@ pub struct OAuthState {
     pub redirect_uri: String,
 }
 
+/// Pending authorization code waiting for token exchange
+/// Stored temporarily between callback and token endpoint calls
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingCodeExchange {
+    /// Authorization code from Miro
+    pub code: String,
+
+    /// PKCE code verifier (needed for token exchange)
+    pub code_verifier: String,
+
+    /// Expiration timestamp (short-lived, ~5 minutes)
+    pub expires_at: DateTime<Utc>,
+}
+
 /// PKCE code verifier and challenge pair
 #[derive(Debug, Clone)]
 pub struct PkcePair {
@@ -75,6 +89,26 @@ pub struct MiroUser {
     pub user_id: String,
     pub email: Option<String>,
     pub name: Option<String>,
+}
+
+/// Token request from Claude.ai (RFC 6749 format)
+/// POST /oauth/token with these parameters
+#[derive(Debug, Deserialize)]
+pub struct TokenRequest {
+    /// Must be "authorization_code"
+    pub grant_type: String,
+
+    /// Authorization code from callback
+    pub code: String,
+
+    /// Must match the redirect_uri from authorize request
+    pub redirect_uri: String,
+
+    /// Client ID (for validation)
+    pub client_id: String,
+
+    /// PKCE code verifier (if PKCE was used)
+    pub code_verifier: Option<String>,
 }
 
 impl From<MiroUser> for UserInfo {

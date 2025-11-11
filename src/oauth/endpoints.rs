@@ -18,14 +18,14 @@ use super::{
 /// Cookie name for OAuth state during authorization flow
 const STATE_COOKIE_NAME: &str = "miro_oauth_state";
 
-/// Cookie name for access token after successful authorization
-const TOKEN_COOKIE_NAME: &str = "miro_auth";
+/// Cookie name for pending authorization code (temporary storage between callback and token endpoint)
+const PENDING_CODE_COOKIE_NAME: &str = "miro_pending_code";
 
 /// OAuth state cookie max age (5 minutes for authorization flow)
 const STATE_COOKIE_MAX_AGE: i64 = 300; // 5 minutes in seconds
 
-/// Token cookie max age (60 days to match Miro refresh token validity)
-const TOKEN_COOKIE_MAX_AGE: i64 = 60 * 24 * 60 * 60; // 60 days in seconds
+/// Pending code cookie max age (5 minutes - code must be exchanged quickly)
+const PENDING_CODE_MAX_AGE: i64 = 300; // 5 minutes in seconds
 
 /// Query parameters for OAuth callback
 #[derive(Debug, Deserialize)]
@@ -118,21 +118,23 @@ pub async fn authorize_handler(
 
 /// Handle GET /oauth/callback - OAuth callback from Miro
 ///
-/// Validates state, exchanges authorization code for access token,
-/// stores token in encrypted cookie, and redirects back to Claude.ai.
+/// Receives authorization code from Miro and redirects it to Claude.ai.
+/// This implements the standard OAuth2 Authorization Server flow where:
+/// - Miro sends the code to our server
+/// - We store the code + PKCE verifier temporarily
+/// - We redirect to Claude.ai WITH the code in the URL
+/// - Claude.ai then calls /oauth/token to exchange the code
 ///
 /// # Flow
-/// 1. Extract and validate state from cookie
+/// 1. Extract and validate state from cookie (CSRF protection)
 /// 2. Verify state parameter matches cookie
-/// 3. Exchange authorization code for access token (with PKCE verifier)
-/// 4. Store access token in encrypted cookie
-/// 5. Redirect to Claude.ai success URL
+/// 3. Store authorization code + PKCE verifier in encrypted cookie (temporary)
+/// 4. Redirect to Claude.ai WITH code in URL: redirect_uri?code=XXX&state=YYY
 pub async fn callback_handler(
     State(state): State<crate::http_server::AppStateADR002>,
     Query(params): Query<CallbackParams>,
     headers: HeaderMap,
 ) -> Result<Response, OAuthEndpointError> {
-    let provider = &state.oauth_provider;
     let cookie_manager = &state.cookie_manager;
     info!("Handling OAuth callback from Miro");
 
@@ -175,28 +177,23 @@ pub async fn callback_handler(
         .as_ref()
         .ok_or_else(|| OAuthEndpointError::InvalidRequest("Authorization code missing".to_string()))?;
 
-    // Exchange code for access token
-    info!("Exchanging authorization code for access token");
-    let cookie_data = provider
-        .exchange_code_for_token(code, &oauth_state.code_verifier)
-        .await
-        .map_err(|e| OAuthEndpointError::OAuthError(format!("Token exchange failed: {}", e)))?;
+    info!(code_length = code.len(), "Received authorization code from Miro");
 
-    info!(
-        user_id = %cookie_data.user_info.user_id,
-        expires_at = %cookie_data.expires_at,
-        "Successfully obtained access token"
-    );
+    // Store code + verifier temporarily for token endpoint to use
+    let pending_exchange = super::types::PendingCodeExchange {
+        code: code.clone(),
+        code_verifier: oauth_state.code_verifier.clone(),
+        expires_at: Utc::now() + chrono::Duration::seconds(PENDING_CODE_MAX_AGE),
+    };
 
-    // Encrypt and store token in cookie
-    let encrypted_token = cookie_manager
-        .encrypt(&cookie_data)
-        .map_err(|e| OAuthEndpointError::CookieError(format!("Failed to encrypt token: {}", e)))?;
+    let encrypted_pending = cookie_manager
+        .encrypt(&pending_exchange)
+        .map_err(|e| OAuthEndpointError::CookieError(format!("Failed to encrypt pending code: {}", e)))?;
 
-    // Build response with token cookie and redirect to Claude.ai
-    let token_cookie = format!(
+    // Build response: store code in cookie and redirect to Claude.ai WITH the code
+    let pending_code_cookie = format!(
         "{}={}; HttpOnly; Secure; SameSite=Lax; Max-Age={}; Path=/",
-        TOKEN_COOKIE_NAME, encrypted_token, TOKEN_COOKIE_MAX_AGE
+        PENDING_CODE_COOKIE_NAME, encrypted_pending, PENDING_CODE_MAX_AGE
     );
 
     // Clear state cookie (no longer needed)
@@ -205,21 +202,42 @@ pub async fn callback_handler(
         STATE_COOKIE_NAME
     );
 
+    // Redirect to Claude.ai WITH the authorization code in URL (standard OAuth2 flow)
+    let redirect_url = format!("{}?code={}&state={}", oauth_state.redirect_uri, code, state_param);
+
+    info!(
+        redirect_url = %redirect_url,
+        "Redirecting to Claude.ai with authorization code"
+    );
+
     Ok((
         StatusCode::FOUND,
         [
-            (header::SET_COOKIE, token_cookie),
+            (header::SET_COOKIE, pending_code_cookie),
             (header::SET_COOKIE, clear_state_cookie),
-            (header::LOCATION, oauth_state.redirect_uri),
+            (header::LOCATION, redirect_url),
         ],
     )
         .into_response())
 }
 
-/// Handle POST /oauth/token - Return access token to Claude.ai
+/// Handle POST /oauth/token - Exchange authorization code for access token
 ///
-/// Extracts token from encrypted cookie and returns in RFC 6749 format.
-/// Claude.ai calls this endpoint to retrieve the access token after OAuth completion.
+/// Standard OAuth2 token endpoint that Claude.ai calls to exchange the authorization code
+/// for an access token. This endpoint:
+/// 1. Extracts authorization code from request (from Claude.ai)
+/// 2. Retrieves PKCE verifier from encrypted cookie (stored during callback)
+/// 3. Exchanges code with Miro API for access token
+/// 4. Returns token in RFC 6749 format
+///
+/// # Request Format (application/x-www-form-urlencoded or JSON)
+/// ```
+/// grant_type=authorization_code
+/// code=<authorization_code>
+/// redirect_uri=<redirect_uri>
+/// client_id=<client_id>
+/// code_verifier=<pkce_verifier> (optional, we have it in cookie)
+/// ```
 ///
 /// # Response Format (RFC 6749)
 /// ```json
@@ -234,30 +252,82 @@ pub async fn callback_handler(
 pub async fn token_handler(
     State(state): State<crate::http_server::AppStateADR002>,
     headers: HeaderMap,
+    axum::extract::Form(token_request): axum::extract::Form<super::types::TokenRequest>,
 ) -> Result<Json<TokenResponseRfc6749>, OAuthEndpointError> {
+    let provider = &state.oauth_provider;
     let cookie_manager = &state.cookie_manager;
-    info!("Handling token request");
+    let config = &state.config;
 
-    // Extract token from cookie
-    let token_cookie = extract_cookie(&headers, TOKEN_COOKIE_NAME).ok_or_else(|| {
-        OAuthEndpointError::Unauthorized("Token cookie not found - user must authorize first".to_string())
+    info!(
+        grant_type = %token_request.grant_type,
+        client_id = %token_request.client_id,
+        "Token endpoint called by Claude.ai"
+    );
+
+    // Validate grant_type
+    if token_request.grant_type != "authorization_code" {
+        return Err(OAuthEndpointError::InvalidRequest(format!(
+            "Unsupported grant_type: {}",
+            token_request.grant_type
+        )));
+    }
+
+    // Validate client_id matches our configuration
+    if token_request.client_id != config.client_id {
+        warn!(
+            expected = %config.client_id,
+            received = %token_request.client_id,
+            "Client ID mismatch"
+        );
+        return Err(OAuthEndpointError::Unauthorized("Invalid client_id".to_string()));
+    }
+
+    // Extract pending code exchange from cookie
+    let pending_cookie = extract_cookie(&headers, PENDING_CODE_COOKIE_NAME).ok_or_else(|| {
+        OAuthEndpointError::Unauthorized(
+            "Pending code cookie not found - authorization flow not completed".to_string(),
+        )
     })?;
 
-    let cookie_data: super::types::CookieData = cookie_manager.decrypt(&token_cookie).map_err(|e| {
-        OAuthEndpointError::Unauthorized(format!("Failed to decrypt token: {}", e))
-    })?;
+    let pending_exchange: super::types::PendingCodeExchange =
+        cookie_manager.decrypt(&pending_cookie).map_err(|e| {
+            OAuthEndpointError::Unauthorized(format!("Failed to decrypt pending code: {}", e))
+        })?;
 
-    // Calculate remaining time until expiration
+    // Check if code has expired
     let now = Utc::now();
+    if now > pending_exchange.expires_at {
+        return Err(OAuthEndpointError::Unauthorized(
+            "Authorization code has expired".to_string(),
+        ));
+    }
+
+    // Validate code matches what we received from callback
+    if token_request.code != pending_exchange.code {
+        warn!("Authorization code mismatch");
+        return Err(OAuthEndpointError::Unauthorized(
+            "Authorization code mismatch".to_string(),
+        ));
+    }
+
+    info!("Exchanging authorization code with Miro API");
+
+    // Exchange code for access token with Miro
+    let cookie_data = provider
+        .exchange_code_for_token(&pending_exchange.code, &pending_exchange.code_verifier)
+        .await
+        .map_err(|e| OAuthEndpointError::OAuthError(format!("Token exchange with Miro failed: {}", e)))?;
+
+    // Calculate token expiration
     let expires_in = (cookie_data.expires_at - now).num_seconds().max(0);
 
     info!(
         user_id = %cookie_data.user_info.user_id,
         expires_in = %expires_in,
-        "Returning access token to Claude.ai"
+        "Successfully exchanged code for access token"
     );
 
-    // Return token in RFC 6749 format
+    // Return token in RFC 6749 format to Claude.ai
     Ok(Json(TokenResponseRfc6749 {
         access_token: cookie_data.access_token,
         token_type: "Bearer".to_string(),
