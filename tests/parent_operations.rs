@@ -1,8 +1,17 @@
-use miro_mcp_server::auth::{MiroOAuthClient, TokenSet, TokenStore};
+// Documentation-only tests - disabled for ADR-005
+#![cfg(feature = "stdio-mcp")]
+
+#[allow(unused_imports)]
 use miro_mcp_server::config::Config;
-use miro_mcp_server::miro::client::MiroClient;
+#[allow(unused_imports)]
+use miro_mcp_server::MiroClient;
+#[allow(unused_imports)]
+use miro_mcp_server::auth::{MiroOAuthClient, TokenSet, TokenStore};
+#[allow(unused_imports)]
 use serde_json::json;
+#[allow(unused_imports)]
 use wiremock::matchers::{body_partial_json, method, path_regex};
+#[allow(unused_imports)]
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper function to create a test configuration

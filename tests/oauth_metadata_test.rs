@@ -3,17 +3,17 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use miro_mcp_server::mcp::oauth_metadata;
+use miro_mcp_server::mcp::{oauth_authorization_server_metadata, oauth_metadata};
 use serde_json::Value;
 use tower::ServiceExt;
 
-/// Test that metadata endpoint returns RFC 9728 Protected Resource Metadata
+/// Test RFC 8414 Authorization Server Metadata endpoint
+/// This endpoint is used for Dynamic Client Registration and standard OAuth flows
 #[tokio::test]
-async fn test_metadata_endpoint_returns_rfc9728_format() {
+async fn test_authorization_server_metadata_endpoint() {
     use miro_mcp_server::Config;
     use std::sync::Arc;
 
-    // Create test config
     let config = Arc::new(Config {
         client_id: "test_client_id".to_string(),
         client_secret: "test_client_secret".to_string(),
@@ -23,103 +23,109 @@ async fn test_metadata_endpoint_returns_rfc9728_format() {
         base_url: Some("http://localhost:3010".to_string()),
     });
 
-    // Create router with metadata endpoint and state
     let app = Router::new()
         .route(
-            "/.well-known/oauth-protected-resource",
-            axum::routing::get(oauth_metadata),
+            "/.well-known/oauth-authorization-server",
+            axum::routing::get(oauth_authorization_server_metadata),
         )
         .with_state(config);
 
-    // Make request to metadata endpoint
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/.well-known/oauth-protected-resource")
+                .uri("/.well-known/oauth-authorization-server")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    // Should return 200 OK
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Parse response body
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let metadata: Value = serde_json::from_slice(&body).unwrap();
 
-    // Verify RFC 9728 required fields
+    // RFC 8414 required fields for Authorization Server
     assert!(
-        metadata.get("resource").is_some(),
-        "Missing 'resource' field (RFC 9728 required)"
+        metadata.get("issuer").is_some(),
+        "Missing 'issuer' field (RFC 8414 required)"
     );
     assert!(
-        metadata.get("authorization_servers").is_some(),
-        "Missing 'authorization_servers' field (RFC 9728 required)"
+        metadata.get("authorization_endpoint").is_some(),
+        "Missing 'authorization_endpoint' field (RFC 8414 required)"
+    );
+    assert!(
+        metadata.get("token_endpoint").is_some(),
+        "Missing 'token_endpoint' field (RFC 8414 required)"
     );
 
-    // Verify values are correct
-    assert_eq!(
-        metadata["resource"].as_str().unwrap(),
-        "https://api.miro.com",
-        "Resource should be Miro API"
+    // Verify endpoint values point to our server
+    let issuer = metadata["issuer"].as_str().unwrap();
+    assert_eq!(issuer, "http://localhost:3010", "Issuer should be our base URL");
+
+    let auth_endpoint = metadata["authorization_endpoint"].as_str().unwrap();
+    assert!(
+        auth_endpoint.contains("/oauth/authorize"),
+        "Authorization endpoint should be at /oauth/authorize"
     );
 
-    let auth_servers = metadata["authorization_servers"]
+    let token_endpoint = metadata["token_endpoint"].as_str().unwrap();
+    assert!(
+        token_endpoint.contains("/oauth/token"),
+        "Token endpoint should be at /oauth/token"
+    );
+
+    // Dynamic Client Registration support
+    assert!(
+        metadata.get("registration_endpoint").is_some(),
+        "Missing 'registration_endpoint' (RFC 7591 support)"
+    );
+    let reg_endpoint = metadata["registration_endpoint"].as_str().unwrap();
+    assert!(
+        reg_endpoint.contains("/register"),
+        "Registration endpoint should be at /register"
+    );
+
+    // Grant and response types
+    let grant_types = metadata["grant_types_supported"]
         .as_array()
-        .expect("authorization_servers should be array");
-    assert_eq!(
-        auth_servers.len(),
-        1,
-        "Should have exactly one authorization server"
-    );
-    assert_eq!(
-        auth_servers[0].as_str().unwrap(),
-        "https://miro.com/oauth",
-        "Authorization server should be Miro OAuth"
+        .expect("grant_types_supported should be array");
+    assert!(
+        grant_types.contains(&Value::String("authorization_code".to_string())),
+        "Should support authorization_code grant type"
     );
 
-    // Verify optional fields are present and correct
-    assert!(
-        metadata.get("scopes_supported").is_some(),
-        "Should include scopes_supported"
-    );
-    let scopes = metadata["scopes_supported"]
+    let response_types = metadata["response_types_supported"]
         .as_array()
-        .expect("scopes_supported should be array");
+        .expect("response_types_supported should be array");
     assert!(
-        scopes.contains(&Value::String("boards:read".to_string())),
-        "Should support boards:read scope"
-    );
-    assert!(
-        scopes.contains(&Value::String("boards:write".to_string())),
-        "Should support boards:write scope"
+        response_types.contains(&Value::String("code".to_string())),
+        "Should support code response type"
     );
 
-    // Verify bearer methods
-    assert!(
-        metadata.get("bearer_methods_supported").is_some(),
-        "Should include bearer_methods_supported"
-    );
-    let methods = metadata["bearer_methods_supported"]
+    // Token endpoint auth methods
+    let auth_methods = metadata["token_endpoint_auth_methods_supported"]
         .as_array()
-        .expect("bearer_methods_supported should be array");
+        .expect("token_endpoint_auth_methods_supported should be array");
     assert!(
-        methods.contains(&Value::String("header".to_string())),
-        "Should support header bearer method"
+        auth_methods.contains(&Value::String("client_secret_basic".to_string())),
+        "Should support client_secret_basic auth method"
+    );
+    assert!(
+        auth_methods.contains(&Value::String("client_secret_post".to_string())),
+        "Should support client_secret_post auth method"
     );
 }
 
-/// Test that metadata does NOT include RFC 8414 Authorization Server fields
+/// Test Protected Resource Metadata endpoint for ADR-004 OAuth Proxy pattern
+/// This tells Claude.ai to use our server as the OAuth proxy to Miro
 #[tokio::test]
-async fn test_metadata_does_not_include_rfc8414_fields() {
+async fn test_protected_resource_metadata_endpoint() {
     use miro_mcp_server::Config;
     use std::sync::Arc;
 
-    // Create test config
     let config = Arc::new(Config {
         client_id: "test_client_id".to_string(),
         client_secret: "test_client_secret".to_string(),
@@ -129,7 +135,6 @@ async fn test_metadata_does_not_include_rfc8414_fields() {
         base_url: Some("http://localhost:3010".to_string()),
     });
 
-    // Create router with metadata endpoint and state
     let app = Router::new()
         .route(
             "/.well-known/oauth-protected-resource",
@@ -147,37 +152,74 @@ async fn test_metadata_does_not_include_rfc8414_fields() {
         .await
         .unwrap();
 
+    assert_eq!(response.status(), StatusCode::OK);
+
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let metadata: Value = serde_json::from_slice(&body).unwrap();
 
-    // These are RFC 8414 fields that should NOT be in RFC 9728 metadata
+    // ADR-004: Protected resource metadata includes authorization/token endpoints
+    // that point to OUR server, not Miro directly
     assert!(
-        metadata.get("issuer").is_none(),
-        "Should NOT include 'issuer' (that's RFC 8414 Authorization Server metadata)"
+        metadata.get("issuer").is_some(),
+        "Missing 'issuer' field"
     );
     assert!(
-        metadata.get("authorization_endpoint").is_none(),
-        "Should NOT include 'authorization_endpoint' (that's RFC 8414)"
+        metadata.get("authorization_endpoint").is_some(),
+        "Missing 'authorization_endpoint' field"
     );
     assert!(
-        metadata.get("token_endpoint").is_none(),
-        "Should NOT include 'token_endpoint' (that's RFC 8414)"
+        metadata.get("token_endpoint").is_some(),
+        "Missing 'token_endpoint' field"
+    );
+
+    // Issuer should be actual provider (Miro)
+    let issuer = metadata["issuer"].as_str().unwrap();
+    assert_eq!(issuer, "https://miro.com", "Issuer should be Miro");
+
+    // But endpoints should point to OUR proxy
+    let auth_endpoint = metadata["authorization_endpoint"].as_str().unwrap();
+    assert!(
+        auth_endpoint.contains("localhost:3010/oauth/authorize"),
+        "Authorization endpoint should point to our proxy, got: {}",
+        auth_endpoint
+    );
+
+    let token_endpoint = metadata["token_endpoint"].as_str().unwrap();
+    assert!(
+        token_endpoint.contains("localhost:3010/oauth/token"),
+        "Token endpoint should point to our proxy, got: {}",
+        token_endpoint
+    );
+
+    // Grant and response types
+    let grant_types = metadata["grant_types_supported"]
+        .as_array()
+        .expect("grant_types_supported should be array");
+    assert!(
+        grant_types.contains(&Value::String("authorization_code".to_string())),
+        "Should support authorization_code grant type"
+    );
+
+    let response_types = metadata["response_types_supported"]
+        .as_array()
+        .expect("response_types_supported should be array");
+    assert!(
+        response_types.contains(&Value::String("code".to_string())),
+        "Should support code response type"
     );
 }
 
-/// Test WWW-Authenticate header includes resource_metadata parameter
+/// Test Bearer token authentication with WWW-Authenticate header
+/// Verifies that unauthenticated requests get 401 with proper WWW-Authenticate header
 #[tokio::test]
-async fn test_www_authenticate_includes_resource_metadata() {
+async fn test_bearer_auth_returns_401_with_www_authenticate() {
     use axum::http::header::WWW_AUTHENTICATE;
     use miro_mcp_server::{http_server::create_app_adr002, Config, TokenValidator};
     use std::sync::Arc;
 
-    // Create mock token validator (won't be called in this test)
     let token_validator = Arc::new(TokenValidator::new());
-
-    // Create test config
     let config = Arc::new(Config {
         client_id: "test_client_id".to_string(),
         client_secret: "test_client_secret".to_string(),
@@ -217,10 +259,10 @@ async fn test_www_authenticate_includes_resource_metadata() {
             .await
             .unwrap();
 
-        // Should return 401
+        // Should return 401 when missing authorization
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-        // Check WWW-Authenticate header
+        // Check WWW-Authenticate header per RFC 6750
         let www_auth = response
             .headers()
             .get(WWW_AUTHENTICATE)
@@ -228,15 +270,15 @@ async fn test_www_authenticate_includes_resource_metadata() {
             .to_str()
             .unwrap();
 
-        // Should include resource_metadata parameter per RFC 9728
+        // Should include Bearer scheme and realm
         assert!(
-            www_auth.contains("resource_metadata="),
-            "WWW-Authenticate should include resource_metadata parameter, got: {}",
+            www_auth.contains("Bearer"),
+            "WWW-Authenticate should use Bearer scheme, got: {}",
             www_auth
         );
         assert!(
-            www_auth.contains("/.well-known/oauth-protected-resource"),
-            "resource_metadata should point to metadata endpoint, got: {}",
+            www_auth.contains("realm"),
+            "WWW-Authenticate should include realm, got: {}",
             www_auth
         );
     }
@@ -260,10 +302,10 @@ async fn test_www_authenticate_includes_resource_metadata() {
             .await
             .unwrap();
 
-        // Should return 401
+        // Should return 401 when missing authorization
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-        // Check WWW-Authenticate header
+        // Check WWW-Authenticate header per RFC 6750
         let www_auth = response
             .headers()
             .get(WWW_AUTHENTICATE)
@@ -271,15 +313,15 @@ async fn test_www_authenticate_includes_resource_metadata() {
             .to_str()
             .unwrap();
 
-        // Should include resource_metadata parameter per RFC 9728
+        // Should include Bearer scheme and realm
         assert!(
-            www_auth.contains("resource_metadata="),
-            "WWW-Authenticate should include resource_metadata parameter, got: {}",
+            www_auth.contains("Bearer"),
+            "WWW-Authenticate should use Bearer scheme, got: {}",
             www_auth
         );
         assert!(
-            www_auth.contains("/.well-known/oauth-protected-resource"),
-            "resource_metadata should point to metadata endpoint, got: {}",
+            www_auth.contains("realm"),
+            "WWW-Authenticate should include realm, got: {}",
             www_auth
         );
     }
