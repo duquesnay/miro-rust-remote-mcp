@@ -63,7 +63,10 @@ async fn test_authorization_server_metadata_endpoint() {
 
     // Verify endpoint values point to our server
     let issuer = metadata["issuer"].as_str().unwrap();
-    assert_eq!(issuer, "http://localhost:3010", "Issuer should be our base URL");
+    assert_eq!(
+        issuer, "http://localhost:3010",
+        "Issuer should be our base URL"
+    );
 
     let auth_endpoint = metadata["authorization_endpoint"].as_str().unwrap();
     assert!(
@@ -161,10 +164,7 @@ async fn test_protected_resource_metadata_endpoint() {
 
     // ADR-004: Protected resource metadata includes authorization/token endpoints
     // that point to OUR server, not Miro directly
-    assert!(
-        metadata.get("issuer").is_some(),
-        "Missing 'issuer' field"
-    );
+    assert!(metadata.get("issuer").is_some(), "Missing 'issuer' field");
     assert!(
         metadata.get("authorization_endpoint").is_some(),
         "Missing 'authorization_endpoint' field"

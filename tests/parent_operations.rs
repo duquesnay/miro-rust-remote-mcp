@@ -2,11 +2,11 @@
 #![cfg(feature = "stdio-mcp")]
 
 #[allow(unused_imports)]
+use miro_mcp_server::auth::{MiroOAuthClient, TokenSet, TokenStore};
+#[allow(unused_imports)]
 use miro_mcp_server::config::Config;
 #[allow(unused_imports)]
 use miro_mcp_server::MiroClient;
-#[allow(unused_imports)]
-use miro_mcp_server::auth::{MiroOAuthClient, TokenSet, TokenStore};
 #[allow(unused_imports)]
 use serde_json::json;
 #[allow(unused_imports)]

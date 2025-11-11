@@ -236,7 +236,7 @@ pub async fn callback_handler(
 /// 4. Returns token in RFC 6749 format
 ///
 /// # Request Format (application/x-www-form-urlencoded or JSON)
-/// ```
+/// ```text
 /// grant_type=authorization_code
 /// code=<authorization_code>
 /// redirect_uri=<redirect_uri>

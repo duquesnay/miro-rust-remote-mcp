@@ -30,14 +30,16 @@ struct ConfigFile {
     /// Miro OAuth2 client ID
     client_id: String,
 
-    /// Miro OAuth2 client secret
-    client_secret: String,
+    /// Miro OAuth2 client secret (optional for ADR-005 Resource Server)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_secret: Option<String>,
 
     /// OAuth2 redirect URI
     redirect_uri: String,
 
-    /// Encryption key for token storage (32-byte hex string)
-    encryption_key: String,
+    /// Encryption key for token storage (32-byte hex string, optional for ADR-005)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encryption_key: Option<String>,
 
     /// MCP server port
     port: u16,
@@ -53,13 +55,16 @@ pub struct Config {
     /// Miro OAuth2 client ID
     pub client_id: String,
 
-    /// Miro OAuth2 client secret
+    /// Miro OAuth2 client secret (optional for ADR-005 Resource Server pattern)
+    /// Required only for ADR-004 OAuth Proxy pattern
     pub client_secret: String,
 
     /// OAuth2 redirect URI
     pub redirect_uri: String,
 
-    /// Encryption key for token storage (32 bytes)
+    /// Encryption key for token storage (32 bytes, optional for ADR-005)
+    /// Required only for ADR-004 OAuth Proxy pattern (token storage)
+    /// ADR-005 doesn't store tokens (they're passed in Authorization headers)
     pub encryption_key: [u8; 32],
 
     /// MCP server port
@@ -92,12 +97,15 @@ impl Config {
         // Validate redirect URI
         let _ = url::Url::parse(&config_file.redirect_uri)?;
 
-        // Parse encryption key from hex
-        let encryption_key = Self::parse_encryption_key(&config_file.encryption_key)?;
+        // Parse encryption key from hex (use dummy value if not provided for ADR-005)
+        let encryption_key = match config_file.encryption_key {
+            Some(key_hex) => Self::parse_encryption_key(&key_hex)?,
+            None => [0u8; 32], // Dummy key for ADR-005 (not used)
+        };
 
         Ok(Config {
             client_id: config_file.client_id,
-            client_secret: config_file.client_secret,
+            client_secret: config_file.client_secret.unwrap_or_else(|| "".to_string()),
             redirect_uri: config_file.redirect_uri,
             encryption_key,
             port: config_file.port,
@@ -131,18 +139,16 @@ impl Config {
     }
 
     /// Load configuration from environment variables
-    /// Reads: MIRO_CLIENT_ID, MIRO_CLIENT_SECRET, MIRO_REDIRECT_URI, MIRO_ENCRYPTION_KEY, MCP_SERVER_PORT
+    /// Reads: MIRO_CLIENT_ID, MIRO_REDIRECT_URI, MCP_SERVER_PORT, BASE_URL
+    /// Optional (for ADR-004 OAuth Proxy): MIRO_CLIENT_SECRET, MIRO_ENCRYPTION_KEY
     pub fn from_env_vars() -> Result<Self, ConfigError> {
         let client_id = std::env::var("MIRO_CLIENT_ID").map_err(|_| ConfigError::FileNotFound {
             path: "environment".to_string(),
             reason: "MIRO_CLIENT_ID environment variable not set".to_string(),
         })?;
 
-        let client_secret =
-            std::env::var("MIRO_CLIENT_SECRET").map_err(|_| ConfigError::FileNotFound {
-                path: "environment".to_string(),
-                reason: "MIRO_CLIENT_SECRET environment variable not set".to_string(),
-            })?;
+        // Optional for ADR-005 Resource Server (OAuth handled by Claude.ai)
+        let client_secret = std::env::var("MIRO_CLIENT_SECRET").unwrap_or_else(|_| "".to_string());
 
         let redirect_uri =
             std::env::var("MIRO_REDIRECT_URI").map_err(|_| ConfigError::FileNotFound {
@@ -153,13 +159,11 @@ impl Config {
         // Validate redirect URI
         let _ = url::Url::parse(&redirect_uri)?;
 
-        let encryption_key_hex =
-            std::env::var("MIRO_ENCRYPTION_KEY").map_err(|_| ConfigError::FileNotFound {
-                path: "environment".to_string(),
-                reason: "MIRO_ENCRYPTION_KEY environment variable not set".to_string(),
-            })?;
-
-        let encryption_key = Self::parse_encryption_key(&encryption_key_hex)?;
+        // Optional for ADR-005 Resource Server (no token storage)
+        let encryption_key = match std::env::var("MIRO_ENCRYPTION_KEY") {
+            Ok(key_hex) => Self::parse_encryption_key(&key_hex)?,
+            Err(_) => [0u8; 32], // Dummy key for ADR-005 (not used)
+        };
 
         let port = std::env::var("MCP_SERVER_PORT")
             .ok()

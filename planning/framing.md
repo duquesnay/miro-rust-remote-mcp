@@ -19,10 +19,11 @@ Build a complete RFC-compliant OAuth2 Authorization Server with Dynamic Client R
 - Timeline is flexible - do it right, not fast
 
 **Architectural Choice** (ADR-004 + DCR):
-- Authorization Server pattern (vs simpler Resource Server)
+- Authorization Server pattern with Dynamic Client Registration
 - Server implements full OAuth flow and token management
-- Intentionally more complex to build reusable infrastructure
-- ADR-005 documented alternative approach for reference only
+- Intentionally comprehensive to build reusable OAuth infrastructure
+- Enables full control over OAuth configuration and token lifecycle
+- **Note**: ADR-005 (Resource Server pattern) explored in separate branch/fork
 
 ---
 
@@ -277,10 +278,10 @@ agile_flow:
 2. **MCP protocol compliance**: Mitigated by integration-specialist validation
 3. **Token security**: Mitigated by security-specialist review before production
 4. **Miro API rate limits**: Mitigated by bulk operations (BULK1) and smart batching
-5. **Resource Server pattern**: ADR-002 supersedes ADR-001 stateless OAuth architecture
-   - **Change**: Claude handles OAuth, we validate tokens (RFC 9728 Resource Server)
-   - **Impact**: 70% less code (~150 LOC vs ~500 LOC)
-   - **Benefit**: LRU cache for token validation (95% cache hit rate, <1ms latency)
+5. **Authorization Server complexity**: Full OAuth implementation with DCR
+   - **Approach**: Complete RFC 6749 + RFC 7591 implementation
+   - **Benefit**: Full OAuth control, reusable infrastructure for future projects
+   - **Mitigation**: Incremental implementation with comprehensive testing at each step
 
 **Medium Risks**:
 1. **Rust async complexity**: Mitigated by solution-architect patterns + tokio best practices
@@ -346,57 +347,58 @@ agile_flow:
 
 **Platform Choice: Scaleway Managed Containers** ✅
 
-*Decision rationale*: Required for LRU cache persistence and optimal token validation performance (ADR-002 Resource Server pattern)
+*Decision rationale*: Required for stateful OAuth server with session management and Dynamic Client Registration (ADR-004 Authorization Server pattern)
 
 **Why Container > Function**:
 - **Remote MCP = SSE transport over HTTP** (long-polling HTTP server, not stdio)
-- **LRU cache in-memory** persists between requests (95% cache hit rate)
-- **No cold start penalty** for token validation (critical path)
-- **Token validation latency**: <1ms (cached) vs 100ms (Miro API call)
+- **Stateful OAuth sessions** require persistent in-memory state between requests
+- **No cold start penalty** for OAuth flows (critical for user experience)
+- **DCR state management**: Dynamic client registration requires session persistence
 
 **Performance Analysis**:
 - **Workload pattern**: Sporadic bursts (org chart 1x/day + spaced API calls)
-- **Token validation**: <1ms (95% cached) vs 100ms (Miro API)
+- **OAuth flows**: Sub-second authorization code exchange
 - **MCP operations**: 200-500ms latency (Miro API + processing)
-- **Cache efficiency**: 95% hit rate with 5-minute TTL
+- **Session management**: In-memory encrypted cookie validation <1ms
 
 **Cost Projection**:
 - **Container (always-on)**: ~€20/month (0.25 vCPU + 256Mi memory)
 - **Container cost breakdown**:
   - vCPU: €0.10/vCPU/hour × 0.25 × 730 hours = €18/month
   - Memory: €0.01/GB/hour × 0.256 GB × 730 hours = €1.87/month
-- **Verdict**: Acceptable for personal use with optimal performance
+- **Verdict**: Acceptable for personal use with full OAuth control
 
 **Recommended Configuration**:
 ```yaml
 containers:
   miro-mcp:
     runtime: rust (Debian Bookworm Slim)
-    memory: 256Mi       # Sufficient for OAuth2 + API calls + LRU cache
+    memory: 256Mi       # Sufficient for OAuth2 + DCR + API calls + session state
     cpu: 0.25           # Single user, low concurrency
-    min_scale: 1        # Always-on for cache persistence
+    min_scale: 1        # Always-on for session persistence
     max_scale: 1        # Single user deployment
-    port: 3000          # HTTP/SSE transport
+    port: 8080          # HTTP/SSE transport
 ```
 
-**Architecture (ADR-002)**:
-- **Pattern**: Resource Server with token validation + caching (RFC 9728)
-- **OAuth flow**: Claude handles OAuth, server validates tokens
-- **Token storage**: Claude stores tokens (not our responsibility)
-- **Cache**: LRU cache (100 tokens, 5-min TTL) for validation results
-- **Code complexity**: ~150 LOC (70% less than ADR-001 Proxy OAuth)
+**Architecture (ADR-004 + DCR)**:
+- **Pattern**: Authorization Server with Proxy OAuth + Dynamic Client Registration
+- **OAuth flow**: Server proxies OAuth between Claude.ai and Miro
+- **Token storage**: Encrypted cookies (stateless, no database)
+- **PKCE**: Full RFC 7636 implementation for security
+- **DCR**: RFC 7591 Dynamic Client Registration for flexible OAuth configuration
+- **Code complexity**: ~1000 LOC (comprehensive OAuth infrastructure)
 
-**Cache Configuration**:
-- **Type**: LRU (Least Recently Used)
-- **Size**: 100 tokens (~10KB memory)
-- **TTL**: 5 minutes (balance security vs performance)
-- **Hit rate**: 95% (estimated for typical usage)
+**Security Configuration**:
+- **Cookie encryption**: AES-256-GCM for OAuth state and tokens
+- **PKCE**: Code challenge/verifier for authorization code flow
+- **State management**: Encrypted cookies with 10-minute TTL for OAuth flow
+- **Token lifetime**: Access tokens 1-hour, refresh tokens handled by Miro
 
 **Platform Details**:
 - **Compute**: Scaleway Managed Containers
-- **Secrets**: Scaleway Secret Manager (MIRO_CLIENT_ID, MIRO_ENCRYPTION_KEY)
-- **Logs**: Scaleway Cockpit (audit trail for token validation)
+- **Secrets**: Scaleway Secret Manager (MIRO_CLIENT_SECRET, MIRO_ENCRYPTION_KEY, MIRO_CLIENT_ID)
+- **Logs**: Scaleway Cockpit (audit trail for OAuth flows and API operations)
 - **TLS**: Native HTTPS (Scaleway provides TLS termination)
-- **Cost target**: €20/month (vs €25-50/month with database)
+- **Cost target**: €20/month (acceptable for comprehensive OAuth infrastructure)
 
-**Decision date**: 2025-11-10 (ADR-002 architecture supersedes ADR-001, container vs function)
+**Decision date**: 2025-11-10 (ADR-004 Authorization Server with DCR for reusable OAuth foundation)

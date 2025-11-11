@@ -579,9 +579,9 @@ tokio-test = "0.4"
 **Rationale**:
 - Container-based deployment for MCP server
 - Native HTTPS support (required for OAuth2)
-- Stateless architecture (ADR-002) compatible
+- Stateful OAuth session management (ADR-004)
 - Predictable pricing and resource allocation
-- Supports Resource Server pattern with token validation
+- Supports Authorization Server pattern with encrypted cookies
 
 **Configuration**: See [planning/framing.md](planning/framing.md) for deployment details
 
@@ -645,47 +645,52 @@ TOKEN_ENCRYPTION_KEY=<generated securely>
 
 **This section documents project-specific learnings as they emerge.**
 
-### 2025-11-11 - MCP OAuth Patterns: Resource Server vs Authorization Server
+### 2025-11-11 - MCP OAuth Patterns: Two Parallel Implementations
 
-**Context**: During Scaleway deployment investigation, compared our OAuth implementation with vault-server project.
+**Context**: During Scaleway deployment investigation, compared our OAuth implementation with vault-server project and discovered two distinct patterns.
 
-**Finding**: **Two distinct MCP OAuth patterns exist**, and we chose the more complex one unnecessarily:
+**Finding**: **Two distinct MCP OAuth patterns exist**, each with different trade-offs:
 
-1. **Authorization Server Pattern** (what we built in ADR-004):
+1. **Authorization Server Pattern** (ADR-004 - **THIS BRANCH**):
    - MCP server implements full OAuth flow (`/oauth/authorize`, `/oauth/callback`, `/oauth/token`)
    - Server handles authorization code exchange with external API (Miro)
-   - Server stores encrypted tokens
-   - Server manages PKCE, state, token refresh
+   - Server manages PKCE, state, encrypted cookies
+   - Includes Dynamic Client Registration (RFC 7591)
    - Redirect URI: `https://our-server.com/oauth/callback`
    - **Complexity**: ~1000 LOC, 3 secrets to manage
-   - **Use case**: When you need OAuth control (rate limiting, custom flows, multi-provider)
+   - **Benefit**: Full OAuth control, reusable infrastructure, learning opportunity
+   - **Use case**: When you need OAuth control or want reusable OAuth foundation
 
-2. **Resource Server Pattern** (vault-server approach, simpler):
+2. **Resource Server Pattern** (ADR-005 - **SEPARATE WORKTREE/FORK**):
    - Claude.ai handles OAuth flow directly with external API
    - Server only validates tokens passed in `Authorization` headers
    - No OAuth endpoints needed on server
    - No token storage needed
    - Redirect URI: `https://claude.ai/api/mcp/auth_callback`
    - **Complexity**: ~150 LOC, 0 secrets on server
-   - **Use case**: Standard MCP servers (most cases)
+   - **Benefit**: Simpler, faster to production, less maintenance
+   - **Use case**: Standard MCP servers where simplicity is priority
 
-**Key Discovery**: Miro accepts external redirect URIs including Claude's callback URL. The MCP OAuth 2.1 specification (RFC 9728) explicitly supports Resource Server pattern via Protected Resource Metadata.
+**Key Discovery**: Miro accepts external redirect URIs including Claude's callback URL. The MCP OAuth 2.1 specification (RFC 9728) explicitly supports both patterns.
+
+**Decision**:
+- **Main branch** (this one): Continue with Authorization Server (ADR-004) for comprehensive OAuth infrastructure
+- **Separate worktree** (`feat/resource-server-pattern`): Explore Resource Server (ADR-005) as simpler alternative
+- **Potential fork**: Resource Server implementation may become separate project
 
 **Implication**:
-- **85% code reduction** possible by switching patterns
-- **66% fewer secrets** to manage (client_secret stays with Claude)
-- **60-70% faster** to production (0.5-1 day vs 2-3 days remaining)
-- **Simpler maintenance** (token validation only vs full OAuth lifecycle)
+- Both approaches are valid for different use cases
+- Authorization Server provides learning opportunity and reusable infrastructure
+- Resource Server would be 85% less code but less control
+- Keeping both allows us to compare and choose per project needs
 
 **Action**:
-- Created **ADR-005** documenting Resource Server pattern decision
-- Created `feat/resource-server-pattern` worktree for refactor
-- New **REFACTOR-BACKLOG.md** with simplified implementation plan (OAUTH1-3 vs AUTH10-14)
-- Pattern validated: vault-server, multiple other MCP servers use this successfully
+- Continued Authorization Server implementation on main branch
+- Created **ADR-005** and `feat/resource-server-pattern` worktree for alternative
+- Archived ADR-005 docs in [planning/archive/](planning/archive/) on main branch
+- May publish both as separate projects for community
 
-**Architectural Lesson**: Always check for simpler patterns before implementing complex solutions. The MCP specification supports multiple OAuth patterns - choose based on actual requirements, not assumptions.
-
-**Reference**: [planning/ADR-005-resource-server-with-claude-oauth.md](planning/ADR-005-resource-server-with-claude-oauth.md)
+**Architectural Lesson**: MCP specification supports multiple OAuth patterns - understand all options before choosing. Sometimes "comprehensive" is the right choice for learning and reusability, even if "simple" would work.
 
 ---
 
