@@ -23,6 +23,7 @@ set +a
 
 # Run Docker container with environment variables
 # Map port 3010 for OAuth callbacks from browser
+# NO_COLOR=1 disables ANSI escape codes for MCP JSON protocol compatibility
 exec docker run -i --rm \
     -v miro-mcp-data:/app/data \
     -p 3010:3010 \
@@ -31,4 +32,5 @@ exec docker run -i --rm \
     -e MIRO_REDIRECT_URI \
     -e MIRO_ENCRYPTION_KEY \
     -e RUST_LOG \
+    -e NO_COLOR=1 \
     miro-mcp-server:test
