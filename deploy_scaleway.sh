@@ -9,13 +9,19 @@ set -e
 PROJECT_NAME="miro-mcp"
 REGION="${SCW_DEFAULT_REGION:-fr-par}"
 REGISTRY_REGION="${SCW_DEFAULT_REGION:-fr-par}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"  # Accept tag from environment or default to 'latest'
 
 echo "🚀 Deploying Miro MCP Server (ADR-002) to Scaleway Containers"
+echo "📌 Image tag: ${IMAGE_TAG}"
 echo ""
 
-# Step 1: Build Docker image
-echo "📦 Building Docker image..."
-docker build -t ${PROJECT_NAME}:latest .
+# Step 1: Build Docker image (only if IMAGE_TAG is 'latest')
+if [ "$IMAGE_TAG" = "latest" ]; then
+    echo "📦 Building Docker image..."
+    docker build -t ${PROJECT_NAME}:latest .
+else
+    echo "⏭️  Skipping build (using pre-built image from GitHub Container Registry)"
+fi
 
 # Step 2: Get Scaleway registry endpoint (use existing container namespace's registry)
 echo ""
@@ -35,9 +41,16 @@ echo "   Registry: $REGISTRY_ENDPOINT"
 
 # Step 3: Tag and push image
 echo ""
-echo "📤 Pushing image to Scaleway Registry..."
-docker tag ${PROJECT_NAME}:latest ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
-docker push ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
+if [ "$IMAGE_TAG" = "latest" ]; then
+    echo "📤 Pushing image to Scaleway Registry..."
+    docker tag ${PROJECT_NAME}:latest ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
+    docker push ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
+else
+    echo "📤 Pulling and pushing versioned image..."
+    docker pull ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}
+    docker tag ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG} ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}
+    docker push ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}
+fi
 
 # Step 4: Deploy container
 echo ""
@@ -46,13 +59,16 @@ echo "🚢 Deploying container..."
 # Check if container already exists
 CONTAINER_ID=$(scw container container list -o json | jq -r ".[] | select(.name == \"${PROJECT_NAME}\") | .id")
 
+# Use IMAGE_TAG for the registry image
+REGISTRY_IMAGE="${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}"
+
 if [ -z "$CONTAINER_ID" ] || [ "$CONTAINER_ID" = "null" ]; then
     echo "   Creating new container..."
     CONTAINER_ID=$(scw container container create \
         name=${PROJECT_NAME} \
         region=${REGION} \
         namespace-id=${CONTAINER_NAMESPACE_ID} \
-        registry-image=${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest \
+        registry-image=${REGISTRY_IMAGE} \
         port=3010 \
         min-scale=1 \
         max-scale=1 \
@@ -61,7 +77,7 @@ if [ -z "$CONTAINER_ID" ] || [ "$CONTAINER_ID" = "null" ]; then
 else
     echo "   Updating existing container (ID: ${CONTAINER_ID})..."
     scw container container update ${CONTAINER_ID} \
-        registry-image=${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
+        registry-image=${REGISTRY_IMAGE}
 fi
 
 # Step 5: Deploy (start) the container

@@ -1,0 +1,111 @@
+name: Deploy to Scaleway
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Deploying version: $VERSION"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Deploy to Scaleway
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          IMAGE_TAG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        run: |
+          chmod +x scripts/deploy_scaleway.sh
+          ./scripts/deploy_scaleway.sh
+
+      - name: Validate deployment
+        run: |
+          CONTAINER_URL="https://miro-mcp-server.containers.scw.cloud"
+          HEALTH_ENDPOINT="$CONTAINER_URL/health"
+          MAX_ATTEMPTS=24
+          SLEEP_INTERVAL=5
+
+          echo "Waiting for health check at $HEALTH_ENDPOINT..."
+
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            echo "Attempt $i/$MAX_ATTEMPTS..."
+
+            if curl -f -s "$HEALTH_ENDPOINT" > /dev/null 2>&1; then
+              echo "✓ Health check passed"
+              RESPONSE=$(curl -s "$HEALTH_ENDPOINT")
+              echo "Response: $RESPONSE"
+              exit 0
+            fi
+
+            if [ $i -lt $MAX_ATTEMPTS ]; then
+              echo "Health check failed, retrying in ${SLEEP_INTERVAL}s..."
+              sleep $SLEEP_INTERVAL
+            fi
+          done
+
+          echo "✗ Health check failed after $((MAX_ATTEMPTS * SLEEP_INTERVAL)) seconds"
+          echo "Deployment may have failed. Check Scaleway console for details."
+          exit 1
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Container URL:** https://miro-mcp-server.containers.scw.cloud" >> $GITHUB_STEP_SUMMARY
+          echo "**Health Check:** https://miro-mcp-server.containers.scw.cloud/health" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "**Status:** ✓ Deployment successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status:** ✗ Deployment failed" >> $GITHUB_STEP_SUMMARY
+          fi
