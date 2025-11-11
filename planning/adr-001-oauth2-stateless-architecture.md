@@ -1,9 +1,12 @@
 # ADR-001: OAuth2 Stateless Architecture for Remote MCP Server
 
-**Status:** Accepted
-**Date:** 2025-11-10
+**Status:** Active (Implemented via ADR-004 for HTTP mode)
+**Date:** 2025-11-10 (Updated: 2025-11-11)
 **Context:** Implementing OAuth2 authentication for remote MCP server deployment
 **Decision Makers:** Solution Architect, Security Specialist, Architecture Reviewer, Integration Specialist
+**Applies To:** HTTP mode (Claude.ai web via ADR-004) AND stdio mode (Claude Desktop - deferred)
+
+> **Critical Update (2025-11-11)**: This Proxy OAuth pattern is now the **correct architecture for HTTP mode** with Claude.ai web. ADR-004 implements this pattern after discovering Claude.ai ignores RFC 9728 metadata discovery and requires convention-based OAuth endpoints (`/authorize`, `/callback`, `/token`). ADR-002's Resource Server pattern was superseded.
 
 ---
 
@@ -17,7 +20,24 @@ We need to implement OAuth2 authentication for a remote MCP (Model Context Proto
 - **Security:** Non-negotiable - must follow OAuth2 security best practices
 - **Timeline:** MVP first, production-ready but not over-engineered
 
-**Key Question:** Can we implement stateless remote MCP with OAuth2 securely?
+**Key Question:** Can we implement stateless OAuth proxy for MCP server securely?
+
+**Scope Evolution (2025-11-11):**
+
+**Originally intended for:** stdio mode only (Claude Desktop)
+
+**Now applies to:**
+1. **HTTP mode** (Claude.ai web) - **IMPLEMENTED via ADR-004**
+   - Claude.ai uses convention-based routing (`/authorize`, `/callback`)
+   - Ignores RFC 9728 metadata discovery
+   - Requires Proxy OAuth pattern (this ADR)
+
+2. **stdio mode** (Claude Desktop) - **DEFERRED**
+   - Would use same pattern but with stdio transport
+   - Token storage: OS keychain or encrypted file
+   - Not yet implemented
+
+**What changed:** ADR-002's Resource Server pattern doesn't work with Claude.ai web. Testing revealed Claude.ai expects Proxy OAuth endpoints, making this ADR the correct architecture for HTTP mode.
 
 ---
 
@@ -408,20 +428,64 @@ if (!session || session.revoked) {
 - [Cloudflare Workers - OAuth Example](https://developers.cloudflare.com/workers/examples/auth-with-headers/)
 
 ### Related ADRs
-- None yet (this is the first architecture decision record)
+- **ADR-002** (Superseded for web): OAuth Resource Server Architecture - Doesn't work with Claude.ai web
+- **ADR-003** (Partially outdated): Dual-Mode Architecture - Assumed Resource Server for HTTP
+- **ADR-004** (Implements this ADR): Proxy OAuth for Claude.ai Web - Actual HTTP mode implementation
+
+---
+
+## Update History
+
+**2025-11-11 (Second Update)**: **Major reversal** - This pattern is now the CORRECT architecture for HTTP mode with Claude.ai web. ADR-004 implements this pattern after empirical testing showed Claude.ai ignores RFC 9728 metadata and requires convention-based OAuth endpoints. ADR-002's Resource Server pattern was superseded for Claude.ai web.
+
+**2025-11-11 (First Update)**: Initially clarified scope as stdio mode only. This was based on incorrect assumption that Claude.ai would use Resource Server pattern.
+
+**Original Date**: 2025-11-10
+
+---
+
+## Implementation Status
+
+**Current Status**: ✅ **IMPLEMENTED for HTTP mode** (via ADR-004)
+
+**What was built (ADR-004)**:
+- `src/oauth/` module with Proxy OAuth implementation
+- `/authorize`, `/callback`, `/token` endpoints
+- PKCE implementation (S256)
+- Encrypted cookie state management (ring)
+- Token refresh logic
+- Successfully tested with Claude.ai web
+
+**HTTP mode implementation (ADR-004)**:
+- Uses this ADR's Proxy OAuth pattern
+- Encrypted cookies for stateless state (not database)
+- PKCE for authorization code protection
+- Convention-based endpoints (not RFC 9728 discovery)
+
+**stdio mode status**: ⬜ Not implemented (deferred)
+- Would use same OAuth pattern
+- Different token storage (OS keychain vs cookies)
+- Different transport (stdio vs HTTP)
 
 ---
 
 ## Review and Update
 
-**Next review:** After MVP deployment (estimated 3 weeks)
-**Review triggers:**
-- Scale exceeds 50 active users
-- Security incident occurs
-- Compliance requirements change
-- Cost exceeds $10/month
+**Next review:** After ADR-004 production deployment (HTTP mode monitoring)
 
-**Decision can be revisited if:**
-- Real-world usage reveals security gaps
-- Performance/scalability issues emerge
-- New OAuth2 best practices are published
+**Review triggers:**
+- HTTP mode production metrics (via ADR-004)
+- User requests Claude Desktop support (stdio mode)
+- Security incidents or vulnerabilities discovered
+- Claude.ai changes OAuth expectations
+
+**Key Learning (2025-11-11):**
+- **Metadata discovery assumptions were wrong**: Claude.ai doesn't use RFC 9728
+- **Convention-based routing wins**: Proxy OAuth is required for Claude.ai web
+- **This ADR was correct all along**: The pattern documented here is the right architecture
+- **ADR-002 was the detour**: Resource Server pattern doesn't work with Claude.ai web
+
+**Decision validated by:**
+- Empirical testing with Claude.ai web custom connectors
+- vault-server reference implementation (proven working pattern)
+- ADR-004 successful implementation and testing

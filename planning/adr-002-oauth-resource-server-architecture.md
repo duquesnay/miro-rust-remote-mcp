@@ -1,9 +1,12 @@
 # ADR-002: OAuth Resource Server Architecture for Miro MCP
 
-**Status:** Accepted (Supersedes ADR-001)
-**Date:** 2025-11-10
+**Status:** Superseded by ADR-004 for Claude.ai web
+**Date:** 2025-11-10 (Updated: 2025-11-11)
 **Context:** Remote MCP server integrating with external OAuth provider (Miro)
 **Decision Makers:** Solution Architect, Security Specialist, Integration Specialist
+**Applies To:** **N/A** - Pattern doesn't work with Claude.ai web custom connectors
+
+> **Critical Update (2025-11-11)**: This ADR documented the Resource Server pattern based on RFC 9728 metadata discovery. Empirical testing revealed **Claude.ai web ignores metadata discovery** and requires convention-based Proxy OAuth endpoints instead. **ADR-004 supersedes this ADR for HTTP mode** with Claude.ai web. This pattern might be valid for other MCP clients that properly implement RFC 9728.
 
 ---
 
@@ -21,6 +24,10 @@ ADR-001 documented a **Proxy OAuth** architecture (PKCE + encrypted cookies) sui
 **Key Realization:** Proxy OAuth (ADR-001) assumes we manage OAuth callbacks. With Miro, **Claude platform manages OAuth**, and we receive pre-authenticated Bearer tokens.
 
 **Critical Question:** How should our MCP server authenticate requests when Claude handles OAuth with Miro?
+
+**Architecture Selected (2025-11-10):** Resource Server with Token Validation + Caching
+
+**Architecture Status (2025-11-11):** **SUPERSEDED** - Claude.ai web doesn't use this pattern. See ADR-004.
 
 ---
 
@@ -778,28 +785,65 @@ With caching:  206ms (31% improvement)
 
 ### Related ADRs
 
-- ADR-001 (Superseded): OAuth2 Stateless Architecture - Proxy OAuth pattern for GitHub
+- **ADR-001** (Correct pattern): OAuth2 Stateless Architecture - Proxy OAuth pattern (implemented via ADR-004)
+- **ADR-003** (Outdated): Dual-Mode Architecture - Assumed Resource Server for HTTP (incorrect)
+- **ADR-004** (Supersedes this): Proxy OAuth for Claude.ai Web - Actual working implementation
+
+---
+
+## Update History
+
+**2025-11-11 (Second Update)**: **Status changed to "Superseded"** - Empirical testing with Claude.ai web revealed this pattern doesn't work. Claude.ai ignores `/.well-known/oauth-protected-resource` metadata and uses convention-based routing. ADR-004 implements the correct Proxy OAuth pattern (ADR-001).
+
+**2025-11-11 (First Update)**: Updated status to "Implemented" (this was premature - based on incorrect assumptions about Claude.ai behavior).
+
+**Original Date**: 2025-11-10
+
+---
+
+## Implementation Status
+
+**Current Status**: ❌ **SUPERSEDED** - Code was built but doesn't work with Claude.ai web
+
+**What was built** (now deprecated):
+- [src/bin/http-server-adr002.rs](../src/bin/http-server-adr002.rs) - HTTP Resource Server (won't work)
+- [src/auth/token_validator.rs](../src/auth/token_validator.rs) - Bearer token validation (not used)
+- OAuth Protected Resource metadata endpoint (ignored by Claude.ai)
+
+**Why it failed**:
+- Claude.ai doesn't use RFC 9728 metadata discovery
+- Claude.ai expects `/authorize`, `/callback`, `/token` endpoints (Proxy OAuth pattern)
+- Resource Server pattern requires Claude to send Bearer tokens (Claude doesn't do this)
+
+**What replaced it**:
+- ADR-004 Proxy OAuth implementation (`src/oauth/` module)
+- Encrypted cookie-based state management
+- Convention-based endpoints matching Claude.ai expectations
 
 ---
 
 ## Review and Update
 
-**Next review:** After Sprint 2 (MCP tools implementation)
+**Next review:** Only if other MCP clients implement RFC 9728 properly
 
-**Review triggers:**
-- Cache hit rate < 90% (consider adjusting TTL)
-- Token validation failures > 5% (investigate Miro API issues)
-- Performance degradation (latency > 500ms p95)
-- Security incident
-- MCP specification updates
+**Lessons Learned (2025-11-11):**
+- **Don't assume spec compliance**: Claude.ai web doesn't use RFC 9728 metadata discovery
+- **Test with real clients early**: Assumptions about Claude.ai behavior were wrong
+- **Convention over configuration**: Claude.ai uses `/authorize` convention, not metadata
+- **Resource Server pattern valid**: Just not for Claude.ai web custom connectors
 
-**Decision can be revisited if:**
-- Miro changes their OAuth implementation
-- Claude MCP protocol evolves
-- Performance requirements change
-- Security best practices evolve
+**This pattern MIGHT work with:**
+- Future MCP clients that implement RFC 9728 correctly
+- Claude Desktop (if it uses proper metadata discovery)
+- Other third-party MCP clients
+
+**Decision superseded because:**
+- Claude.ai web requires Proxy OAuth (ADR-004)
+- No MCP client currently uses Resource Server pattern
+- Proxy OAuth is the working pattern (ADR-001 via ADR-004)
 
 ---
 
-**Supersedes:** ADR-001 (OAuth2 Stateless Architecture)
-**Next ADR:** TBD (potentially ADR-003 on Miro API orchestration patterns)
+**Architecture Choice**: Resource Server (RFC 9728 compliant)
+**Actual Working Pattern**: Proxy OAuth (ADR-001 via ADR-004)
+**Status**: Superseded by ADR-004 for Claude.ai web
