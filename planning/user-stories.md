@@ -367,3 +367,74 @@
 **Source**: USER_REQUEST
 
 ---
+
+### PROTO1: Claude.ai connects via MCP protocol (vs REST-only server)
+
+**User**: Claude.ai (AI assistant) attempting to connect to MCP server from web interface
+**Outcome**: Successfully initializes MCP session, discovers tools, and executes tool calls via JSON-RPC 2.0 protocol
+**Context**: Server currently implements REST API (GET /health, Bearer token validation) but Claude.ai expects MCP protocol (POST /mcp with JSON-RPC requests). Connection fails because server doesn't speak MCP protocol.
+
+**Acceptance Criteria**:
+- POST /mcp endpoint accepts JSON-RPC 2.0 requests
+- Request with `initialize` method returns ServerCapabilities:
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "protocolVersion": "2024-11-05",
+      "capabilities": { "tools": {} },
+      "serverInfo": { "name": "miro-mcp-server", "version": "0.1.0" }
+    }
+  }
+  ```
+- Request with `tools/list` method returns 2 tools (list_boards, get_board) with proper JSON schemas
+- Request with `tools/call` method executes list_boards and returns Miro API response
+- Bearer token extracted from Authorization header and validated before processing
+- All responses follow JSON-RPC 2.0 format (id matches request, jsonrpc="2.0", result or error)
+- Error responses use JSON-RPC error codes:
+  - -32700: Parse error (invalid JSON)
+  - -32600: Invalid request (missing jsonrpc/method)
+  - -32601: Method not found (unknown method)
+  - -32602: Invalid params
+  - 401: Unauthorized (missing/invalid Bearer token)
+- Integration test verifies full flow: initialize → tools/list → tools/call
+
+**Implementation Notes**:
+- Manual implementation (no rmcp library, stable Rust only per user decision)
+- Estimated 200 LOC, 6-8h implementation (per solution-architect plan)
+- POST /mcp handles all JSON-RPC methods (single endpoint, method routing)
+- JSON-RPC request format:
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": { "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {...} }
+  }
+  ```
+- Tool call format:
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": { "name": "list_boards", "arguments": {} }
+  }
+  ```
+- Reuse existing Bearer token validation from AUTH7/AUTH9
+- Tool execution delegates to existing Miro API client
+- Error handling must distinguish protocol errors (JSON-RPC) from application errors (Miro API)
+
+**Technical Approach**:
+1. Add `POST /mcp` route to Axum router
+2. Parse JSON-RPC request (jsonrpc, id, method, params)
+3. Route by method: initialize → capabilities, tools/list → tool schemas, tools/call → tool execution
+4. Validate Bearer token before processing (reuse existing middleware)
+5. Execute tool via existing MiroCient
+6. Format response as JSON-RPC (success or error)
+7. Integration test with real JSON-RPC requests
+
+**Source**: USER_REQUEST
+
+---
