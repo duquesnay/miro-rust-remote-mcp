@@ -14,7 +14,7 @@ RUN mkdir -p src/bin && \
     echo "pub fn dummy() {}" > src/lib.rs
 
 # Build dependencies (this layer will be cached)
-RUN cargo build --release --bin server --no-default-features
+RUN cargo build --release --bin server
 
 # Remove dummy source
 RUN rm -rf src
@@ -24,7 +24,7 @@ COPY src ./src
 
 # Build with real source (fast - only compiles our code)
 RUN touch src/lib.rs && \
-    cargo build --release --bin server --no-default-features
+    cargo build --release --bin server
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

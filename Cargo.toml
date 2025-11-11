@@ -17,7 +17,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 axum = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 lru = "0.12"
 url = "2.5"
 hex = "0.4"
@@ -25,7 +25,7 @@ dirs = "5.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Dependencies only needed for stdio-mcp feature (OAuth client, token storage)
-rmcp = { version = "0.7", features = ["server", "transport-io", "transport-streamable-http-server", "auth", "macros"], optional = true }
+rmcp = { version = "0.6", features = ["server", "transport-io", "transport-streamable-http-server", "auth", "macros"], optional = true }
 oauth2 = { version = "4.4", optional = true }
 ring = { version = "0.17", optional = true }
 base64 = { version = "0.22", optional = true }
