@@ -62,34 +62,39 @@ MCP_SERVER_PORT=3000            # Server port (default)
 openssl rand -hex 32
 ```
 
-### Scaleway Secrets Configuration
+### Scaleway Secret Manager Configuration
+
+**IMPORTANT**: All sensitive credentials are managed via Scaleway Secret Manager (not container namespace secrets).
+
+**Required Secrets** (MUST be in Secret Manager):
+- `MIRO_CLIENT_SECRET` - Miro OAuth2 client secret
+- `MIRO_ENCRYPTION_KEY` - 32-byte hex key for token encryption
+
+**Non-Secret Environment Variables** (in .env.production):
+- `MIRO_CLIENT_ID` - Miro OAuth2 client ID (public identifier)
+- `MIRO_REDIRECT_URI` - OAuth2 callback URL (public)
+- `TOKEN_STORAGE_PATH` - Token storage file path
+
+**Setup Instructions**:
 
 ```bash
-# Create secrets in Scaleway (via Console or CLI)
-scw container secret create \
-  region=fr-par \
-  namespace-id=<namespace-id> \
-  name=MIRO_CLIENT_ID \
-  value=<your-client-id>
+# Generate encryption key
+ENCRYPTION_KEY=$(openssl rand -hex 32)
 
-scw container secret create \
-  region=fr-par \
-  namespace-id=<namespace-id> \
-  name=MIRO_CLIENT_SECRET \
-  value=<your-client-secret>
+# Create secrets in Secret Manager
+scw secret secret create region=fr-par name=MIRO_CLIENT_SECRET
+scw secret version create region=fr-par secret-id=<secret-id> data="<your-client-secret>"
 
-scw container secret create \
-  region=fr-par \
-  namespace-id=<namespace-id> \
-  name=MIRO_ENCRYPTION_KEY \
-  value=<hex-key>
+scw secret secret create region=fr-par name=MIRO_ENCRYPTION_KEY
+scw secret version create region=fr-par secret-id=<secret-id> data="${ENCRYPTION_KEY}"
 
-scw container secret create \
-  region=fr-par \
-  namespace-id=<namespace-id> \
-  name=TOKEN_STORAGE_PATH \
-  value=/app/data/tokens.enc
+# Verify secrets created
+scw secret secret list region=fr-par
 ```
+
+**Deployment Integration**: The `scripts/deploy.sh` script automatically validates secrets and injects them into containers via `--secret-environment-variables` flag.
+
+**For detailed secret management procedures, rotation schedules, and emergency procedures, see**: [docs/SECRET_MANAGEMENT.md](../docs/SECRET_MANAGEMENT.md)
 
 ---
 
@@ -356,9 +361,19 @@ scw container container deploy \
 ### Token Security
 
 - ✅ Tokens encrypted at rest (AES-256-GCM)
-- ✅ Encryption key stored as Scaleway secret
+- ✅ Encryption key stored in Scaleway Secret Manager
 - ✅ Token storage persisted to volume (survives container restarts)
 - ✅ No tokens logged (tracing configured to avoid sensitive data)
+
+### Secret Management
+
+- ✅ Sensitive credentials in Scaleway Secret Manager (not environment variables)
+- ✅ Automatic secret validation before deployment
+- ✅ 90-day rotation schedule for all secrets
+- ✅ Zero-downtime rotation procedures
+- ✅ Emergency rotation procedures documented
+
+**See**: [docs/SECRET_MANAGEMENT.md](../docs/SECRET_MANAGEMENT.md) for complete secret management documentation.
 
 ### OAuth2 Security
 
@@ -371,11 +386,13 @@ scw container container deploy \
 
 ## Next Steps
 
-1. **Monitor Deployment**: Set up monitoring/alerting for container health
-2. **Backup Strategy**: Configure automated backups of token storage volume
-3. **CI/CD Integration**: Automate deployment via GitHub Actions or GitLab CI
-4. **Load Testing**: Test OAuth flow and API calls under load
-5. **Documentation**: Document MCP tools and usage examples for Claude
+1. **Secret Management**: Complete initial secret setup (see [docs/SECRET_MANAGEMENT.md](../docs/SECRET_MANAGEMENT.md))
+2. **Monitor Deployment**: Set up monitoring/alerting for container health
+3. **Secret Rotation Schedule**: Set calendar reminders for 90-day rotation
+4. **Backup Strategy**: Configure automated backups of token storage volume
+5. **CI/CD Integration**: Automate deployment via GitHub Actions or GitLab CI
+6. **Load Testing**: Test OAuth flow and API calls under load
+7. **Documentation**: Document MCP tools and usage examples for Claude
 
 ---
 

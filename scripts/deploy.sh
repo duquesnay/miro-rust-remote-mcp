@@ -55,6 +55,64 @@ load_environment() {
     fi
 }
 
+# Validate secrets exist in Scaleway Secret Manager
+validate_secrets() {
+    local namespace_id=$1
+    local required_secrets=("MIRO_CLIENT_SECRET" "MIRO_ENCRYPTION_KEY")
+    local missing_secrets=()
+
+    echo -e "${YELLOW}Validating secrets in Scaleway Secret Manager...${NC}"
+
+    for secret_name in "${required_secrets[@]}"; do
+        local secret_id=$(scw secret secret list region="${REGION}" name="${secret_name}" -o json | jq -r ".[0].id // empty")
+
+        if [[ -z "${secret_id}" ]]; then
+            missing_secrets+=("${secret_name}")
+        else
+            echo "  ✓ Found secret: ${secret_name} (${secret_id})"
+        fi
+    done
+
+    if [[ ${#missing_secrets[@]} -gt 0 ]]; then
+        echo -e "${RED}Error: Missing required secrets in Scaleway Secret Manager:${NC}"
+        for secret_name in "${missing_secrets[@]}"; do
+            echo "  - ${secret_name}"
+        done
+        echo ""
+        echo "Create secrets with:"
+        echo "  scw secret secret create region=${REGION} name=MIRO_CLIENT_SECRET"
+        echo "  scw secret version create region=${REGION} secret-id=<secret-id> data=<your-secret-value>"
+        echo ""
+        echo "Or use the helper script:"
+        echo "  ./scripts/create-secrets.sh"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ All required secrets validated${NC}"
+}
+
+# Get secret IDs for container configuration
+get_secret_ids() {
+    local secret_name=$1
+    scw secret secret list region="${REGION}" name="${secret_name}" -o json | jq -r ".[0].id // empty"
+}
+
+# Build secret environment variable configuration for container
+build_secret_env_config() {
+    local namespace_id=$1
+    local secret_env_vars=""
+
+    # Required secrets
+    local miro_client_secret_id=$(get_secret_ids "MIRO_CLIENT_SECRET")
+    local miro_encryption_key_id=$(get_secret_ids "MIRO_ENCRYPTION_KEY")
+
+    # Build secret environment variable mapping
+    # Format: --secret-environment-variables "ENV_VAR_NAME=secret://SECRET_ID"
+    secret_env_vars="MIRO_CLIENT_SECRET=secret://${miro_client_secret_id},MIRO_ENCRYPTION_KEY=secret://${miro_encryption_key_id}"
+
+    echo "${secret_env_vars}"
+}
+
 # Colors for output
 RED='\033[0.31m'
 GREEN='\033[0;32m'
@@ -178,6 +236,13 @@ if [[ "${DEPLOY_TARGET}" == "scaleway" ]]; then
 
     echo "Namespace ID: ${NAMESPACE_ID}"
 
+    # Validate secrets before deployment
+    validate_secrets "${NAMESPACE_ID}"
+
+    # Build secret environment variables configuration
+    SECRET_ENV_VARS=$(build_secret_env_config "${NAMESPACE_ID}")
+    echo "Secret environment variables configured: MIRO_CLIENT_SECRET, MIRO_ENCRYPTION_KEY"
+
     # Check if container already exists
     EXISTING_CONTAINER=$(scw container container list region="${REGION}" namespace-id="${NAMESPACE_ID}" name="${PROJECT_NAME}" -o json | jq -r '.[0].id // empty')
 
@@ -186,9 +251,12 @@ if [[ "${DEPLOY_TARGET}" == "scaleway" ]]; then
       scw container container update \
         region="${REGION}" \
         container-id="${EXISTING_CONTAINER}" \
-        registry-image="${IMAGE_NAME}"
+        registry-image="${IMAGE_NAME}" \
+        secret-environment-variables="${SECRET_ENV_VARS}"
     else
       echo "Creating new container"
+      # Note: Non-secret env vars like MIRO_CLIENT_ID, MIRO_REDIRECT_URI can be set via --environment-variables
+      # For now, all sensitive vars are in Secret Manager
       scw container container create \
         region="${REGION}" \
         namespace-id="${NAMESPACE_ID}" \
@@ -197,7 +265,9 @@ if [[ "${DEPLOY_TARGET}" == "scaleway" ]]; then
         min-scale="${MIN_SCALE}" \
         max-scale="${MAX_SCALE}" \
         memory-limit="${MEMORY_LIMIT}" \
-        cpu-limit="${CPU_LIMIT}"
+        cpu-limit="${CPU_LIMIT}" \
+        secret-environment-variables="${SECRET_ENV_VARS}" \
+        environment-variables="MIRO_CLIENT_ID=${MIRO_CLIENT_ID},MIRO_REDIRECT_URI=${MIRO_REDIRECT_URI},TOKEN_STORAGE_PATH=/app/data/tokens.enc"
     fi
 
     echo -e "${GREEN}✓ Container deployed${NC}"
@@ -206,22 +276,21 @@ if [[ "${DEPLOY_TARGET}" == "scaleway" ]]; then
 
   # Deployment complete message for Scaleway
   if [[ "${DRY_RUN}" == "false" ]]; then
-    echo -e "${YELLOW}Deployment complete!${NC}"
+    echo -e "${GREEN}Deployment complete!${NC}"
+    echo ""
+    echo "Secrets configured:"
+    echo "  ✓ MIRO_CLIENT_SECRET (from Secret Manager)"
+    echo "  ✓ MIRO_ENCRYPTION_KEY (from Secret Manager)"
     echo ""
     echo "Next steps:"
-    echo "1. Configure Scaleway secrets:"
-    echo "   - MIRO_CLIENT_ID"
-    echo "   - MIRO_CLIENT_SECRET"
-    echo "   - MIRO_REDIRECT_URI"
-    echo "   - MIRO_ENCRYPTION_KEY"
-    echo "   - TOKEN_STORAGE_PATH=/app/data/tokens.enc"
+    echo "1. Test deployment:"
+    echo "   scw container container logs region=${REGION} container-id=${EXISTING_CONTAINER:-<container-id>} --follow"
     echo ""
-    echo "2. Update Miro Developer Portal redirect URI:"
-    echo "   - Get container URL: scw container container list region=${REGION} namespace-id=${NAMESPACE_ID} name=${PROJECT_NAME}"
-    echo "   - Register redirect URI: https://<container-url>/oauth/callback"
+    echo "2. Verify OAuth flow:"
+    echo "   - Container URL: https://<container-domain>"
+    echo "   - Miro redirect URI already configured: ${MIRO_REDIRECT_URI}"
     echo ""
-    echo "3. Test deployment:"
-    echo "   scw container container logs region=${REGION} container-id=<container-id>"
+    echo "3. For secret rotation, see: docs/SECRET_MANAGEMENT.md"
   else
     echo -e "${YELLOW}[DRY RUN] Scaleway deployment simulated successfully${NC}"
   fi
