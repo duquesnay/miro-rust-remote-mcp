@@ -20,7 +20,8 @@ async fn test_valid_token_validation() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     let result = validator.validate_token("valid_token_123").await;
 
@@ -44,7 +45,8 @@ async fn test_invalid_token_returns_401() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     let result = validator.validate_token("invalid_token").await;
 
@@ -68,7 +70,8 @@ async fn test_expired_token_validation() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     let result = validator.validate_token("expired_token").await;
 
@@ -97,7 +100,8 @@ async fn test_cache_hit_scenario() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     // First request - cache miss, calls Miro API
     let result1 = validator.validate_token("cached_token").await;
@@ -133,7 +137,8 @@ async fn test_cache_ttl_expiry() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     // First validation
     let result1 = validator.validate_token("ttl_test_token").await;
@@ -166,7 +171,8 @@ async fn test_cache_capacity_limit() {
             .await;
     }
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     // Validate 100 tokens - all should fit in cache
     for i in 0..100 {
@@ -204,7 +210,8 @@ async fn test_cache_clear() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     // First validation - cache miss
     let result1 = validator.validate_token("clear_test_token").await;
@@ -264,7 +271,8 @@ async fn test_multiple_tokens_cached() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     // Validate all 3 tokens
     let result_a = validator.validate_token("token_a").await;
@@ -302,7 +310,8 @@ async fn test_api_error_handling() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     let result = validator.validate_token("error_token").await;
 
@@ -331,7 +340,8 @@ async fn test_scopes_parsing() {
         .mount(&mock_server)
         .await;
 
-    let validator = TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
+    let validator =
+        TokenValidator::new_with_endpoint(format!("{}/v1/oauth-token", mock_server.uri()));
 
     let result = validator.validate_token("multi_scope_token").await;
 
@@ -339,6 +349,11 @@ async fn test_scopes_parsing() {
     let user_info = result.unwrap();
     assert_eq!(
         user_info.scopes,
-        vec!["boards:read", "boards:write", "connectors:read", "connectors:write"]
+        vec![
+            "boards:read",
+            "boards:write",
+            "connectors:read",
+            "connectors:write"
+        ]
     );
 }

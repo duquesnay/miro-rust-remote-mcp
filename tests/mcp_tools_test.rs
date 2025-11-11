@@ -1,10 +1,13 @@
 use axum::http::{Request, StatusCode};
 use axum::Router;
-use miro_mcp_server::{
-    create_app, Config, CookieStateManager, CookieTokenManager, MiroOAuthClient, TokenValidator,
-};
+use miro_mcp_server::{http_server::create_app_adr002, Config, TokenValidator};
 use std::sync::Arc;
 use tower::ServiceExt;
+
+#[cfg(feature = "oauth-proxy")]
+use miro_mcp_server::oauth::cookie_manager::CookieManager;
+#[cfg(feature = "oauth-proxy")]
+use miro_mcp_server::oauth::proxy_provider::MiroOAuthProvider;
 
 fn get_test_config() -> Config {
     Config {
@@ -13,22 +16,30 @@ fn get_test_config() -> Config {
         redirect_uri: "http://localhost:3010/oauth/callback".to_string(),
         encryption_key: [0u8; 32],
         port: 3010,
+        base_url: Some("http://localhost:3010".to_string()),
     }
 }
 
 fn create_test_app() -> Router {
-    let config = get_test_config();
-    let oauth_client = Arc::new(MiroOAuthClient::new(&config).unwrap());
-    let cookie_state_manager = CookieStateManager::from_config(config.encryption_key);
-    let cookie_token_manager = CookieTokenManager::from_config(config.encryption_key);
+    let config = Arc::new(get_test_config());
     let token_validator = Arc::new(TokenValidator::new());
 
-    create_app(
-        oauth_client,
-        cookie_state_manager,
-        cookie_token_manager,
-        token_validator,
-    )
+    #[cfg(feature = "oauth-proxy")]
+    {
+        let oauth_provider = Arc::new(MiroOAuthProvider::new(
+            config.client_id.clone(),
+            config.client_secret.clone(),
+            config.redirect_uri.clone(),
+        ));
+        let cookie_manager = Arc::new(CookieManager::new(&config.encryption_key));
+
+        create_app_adr002(token_validator, config, oauth_provider, cookie_manager)
+    }
+
+    #[cfg(not(feature = "oauth-proxy"))]
+    {
+        create_app_adr002(token_validator, config)
+    }
 }
 
 #[tokio::test]

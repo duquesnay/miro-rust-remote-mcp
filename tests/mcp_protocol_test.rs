@@ -10,8 +10,7 @@ use serde_json::{json, Value};
 
 #[test]
 fn test_jsonrpc_request_serialization() {
-    let req = JsonRpcRequest::new("test_method")
-        .with_id(Value::Number(1.into()));
+    let req = JsonRpcRequest::new("test_method").with_id(Value::Number(1.into()));
 
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains("\"method\":\"test_method\""));
