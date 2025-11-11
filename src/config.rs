@@ -105,7 +105,7 @@ impl Config {
 
         Ok(Config {
             client_id: config_file.client_id,
-            client_secret: config_file.client_secret.unwrap_or_else(|| "".to_string()),
+            client_secret: config_file.client_secret.unwrap_or_default(),
             redirect_uri: config_file.redirect_uri,
             encryption_key,
             port: config_file.port,
