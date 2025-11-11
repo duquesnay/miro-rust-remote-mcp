@@ -133,6 +133,11 @@ impl TokenValidator {
 
     /// Validate token with Miro API
     async fn validate_with_miro(&self, token: &str) -> Result<UserInfo, AuthError> {
+        debug!(
+            endpoint = %self.token_endpoint,
+            "Calling Miro token validation endpoint"
+        );
+
         let response = self
             .http_client
             .get(&self.token_endpoint)
@@ -140,19 +145,32 @@ impl TokenValidator {
             .send()
             .await
             .map_err(|e| {
-                warn!(error = %e, "Failed to call Miro token endpoint");
+                warn!(
+                    error = %e,
+                    endpoint = %self.token_endpoint,
+                    error_type = "http_request_failed",
+                    "Failed to call Miro token endpoint"
+                );
                 AuthError::TokenValidationFailed(format!("HTTP request failed: {}", e))
             })?;
 
         let status = response.status();
 
         if status == reqwest::StatusCode::UNAUTHORIZED {
-            warn!("Token validation failed: 401 Unauthorized");
+            warn!(
+                status = %status,
+                error_type = "invalid_token",
+                "Token validation failed: 401 Unauthorized from Miro API"
+            );
             return Err(AuthError::TokenInvalid);
         }
 
         if !status.is_success() {
-            warn!(status = %status, "Token validation failed with non-2xx status");
+            warn!(
+                status = %status,
+                error_type = "api_error",
+                "Token validation failed with non-2xx status from Miro API"
+            );
             return Err(AuthError::TokenValidationFailed(format!(
                 "Miro API returned status {}",
                 status
@@ -160,9 +178,20 @@ impl TokenValidator {
         }
 
         let miro_response: MiroTokenResponse = response.json().await.map_err(|e| {
-            warn!(error = %e, "Failed to parse Miro token response");
+            warn!(
+                error = %e,
+                error_type = "json_parse_failed",
+                "Failed to parse Miro token response"
+            );
             AuthError::TokenValidationFailed(format!("Failed to parse response: {}", e))
         })?;
+
+        debug!(
+            user_id = %miro_response.user,
+            team_id = %miro_response.team,
+            scopes = %miro_response.scopes,
+            "Miro API returned valid token information"
+        );
 
         // Parse space-separated scopes
         let scopes: Vec<String> = miro_response

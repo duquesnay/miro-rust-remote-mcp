@@ -51,9 +51,17 @@ TOKEN_STORAGE_PATH=/app/data/tokens.enc
 #### Optional Environment Variables
 
 ```bash
-RUST_LOG=info                    # Logging level
+RUST_LOG=info                    # Logging level (info, debug, trace)
+LOG_FORMAT=json                  # Log format: json (production) or pretty (dev)
 MCP_SERVER_PORT=3000            # Server port (default)
 ```
+
+**Log Configuration (OBS1):**
+- `LOG_FORMAT=json` - Structured JSON logs for Scaleway Cockpit (recommended for production)
+- `LOG_FORMAT=pretty` - Human-readable logs for development (default if unset)
+- `RUST_LOG=info` - Standard verbosity (recommended)
+- `RUST_LOG=debug` - Detailed auth logging (temporary debugging only)
+- `RUST_LOG=trace` - Very verbose (not recommended for production)
 
 ### Generate Encryption Key
 

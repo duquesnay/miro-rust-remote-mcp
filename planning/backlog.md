@@ -40,6 +40,8 @@
 - [x] PROTO1: Claude.ai connects via MCP protocol (vs REST-only server) ✅ 2025-11-10
 - [x] DEPLOY2: System deploys to Scaleway Containers successfully ✅ 2025-11-10
   - Note: Deployed with MCP protocol support; Container: miro-mcp at flyagileapipx8njvei-miro-mcp.functions.fnc.fr-par.scw.cloud
+- [x] OBS1: Developer diagnoses production auth failures through structured logging ✅ 2025-11-11
+  - Note: Implemented correlation IDs, structured logging with JSON format, and emergency debugging runbook (DEBUGGING.md)
 
 ## In Progress
 
@@ -49,45 +51,80 @@
 
 ## Planned
 
-### High Priority (Production Readiness - Scaleway Containers)
+### Production Readiness Summary
 
-- [ ] **SEC1**: Developer configures secrets securely via Scaleway Secret Manager
-  - **Outcome**: Sensitive credentials isolated from application code and logs
+**Timeline to Production**: 1-2 days (if P0 blockers addressed)
+
+**Critical Path**:
+1. SEC1 (secrets in Secret Manager) → P0 blocker
+2. TEST2 (Claude.ai OAuth discovery) → P0 blocker
+3. OBS1 (observability setup) → P1 issue
+4. Final deployment validation
+
+**Technical Investment Ratio**: ~25% (3 technical capabilities / 12 total items in planned backlog)
+**Zone Status**: 🟢 Green - Healthy balance of technical and user-facing work
+
+---
+
+### 🚨 P0 Production Blockers (MUST complete before production deployment)
+
+- [ ] **SEC1**: Sensitive credentials protected from exposure in production environment
+  - **Current Risk**: Client secret and encryption keys in environment variables without secure storage
+  - **Target State**: Secrets in Scaleway Secret Manager, zero exposure in logs/code
+  - **Value**: Prevents unauthorized API access and data breaches
   - **Acceptance Criteria**:
-    - Store MIRO_CLIENT_SECRET in Secret Manager
-    - Store TOKEN_ENCRYPTION_KEY in Secret Manager
-    - Configure function to access secrets at runtime via environment injection
-    - Verify secrets never logged or exposed in function output
-    - Document secret rotation procedure
-    - Test secret access from cold-start function
-  - **Dependencies**: DEPLOY2 (functions infrastructure ready)
+    - MIRO_CLIENT_SECRET stored in Scaleway Secret Manager (not env var)
+    - TOKEN_ENCRYPTION_KEY stored in Scaleway Secret Manager (not env var)
+    - Function accesses secrets at runtime via secure injection
+    - Verify secrets NEVER appear in function logs (even debug mode)
+    - Document secret rotation procedure for compromise scenarios
+    - Test secret access from cold-start container
+  - **Dependencies**: DEPLOY2 (Scaleway infrastructure ready)
   - **Complexity**: 1.0 (secret management setup)
+  - **Priority**: P0 - Security vulnerability blocker
 
-- [ ] **TEST2**: Stateless authentication verified through comprehensive integration tests
-  - **Outcome**: Prevent regressions in security-critical stateless cookie implementation
+- [ ] **TEST2**: Claude.ai discovers OAuth capability automatically via metadata endpoint
+  - **Current Risk**: OAuth metadata endpoint implemented but not verified with Claude.ai
+  - **Target State**: Claude.ai web interface successfully discovers and uses OAuth flow
+  - **Value**: Entire integration fails if Claude.ai cannot discover OAuth capability
   - **Acceptance Criteria**:
-    - Test PKCE validation (wrong verifier rejected)
-    - Test state validation (CSRF attack blocked)
-    - Test expired state (10-min timeout enforced)
-    - Test expired access token (1-hour refresh)
-    - Test cold start simulation (state persists in cookies)
-    - Test concurrent auth flows (no state collision)
-  - **Dependencies**: AUTH4, AUTH5
-  - **Complexity**: 1.5 (complex security test scenarios)
+    - Verify /.well-known/oauth-protected-resource accessible from internet (HTTPS)
+    - Test Claude.ai web interface discovers OAuth metadata endpoint
+    - Confirm Claude.ai initiates OAuth flow automatically (vs manual token input)
+    - Validate metadata JSON matches Claude.ai expectations (authorization_endpoint, token_endpoint)
+    - Add automated test in deploy_scaleway.sh to verify metadata endpoint after deployment
+    - Document Claude.ai OAuth discovery process for troubleshooting
+  - **Dependencies**: DEPLOY2 (HTTPS endpoint deployed), AUTH6 (metadata endpoint implemented)
+  - **Complexity**: 1.0 (verification and validation)
+  - **Priority**: P0 - Integration failure blocker
 
-### Medium Priority (Operational Excellence)
+### Medium Priority (Optimization & Quality)
 
-- [ ] **OBS1**: Developer monitors production OAuth2 flow via Scaleway Cockpit
-  - **Outcome**: Audit trail and debugging capability for authentication events
+- [ ] **TECH6**: Developer builds faster with optimized Cargo features
+  - **Current State**: Default feature includes stdio-mcp dependencies in HTTP mode
+  - **Target State**: Minimal binary size and faster compilation for HTTP-only deployments
+  - **Value**: Faster CI/CD pipeline and smaller container images
   - **Acceptance Criteria**:
-    - Implement structured logging for auth events (initiate, callback, refresh, errors)
-    - Log session/request IDs for correlation across function invocations
-    - Configure Cockpit log collection from Serverless Functions
-    - Create Cockpit queries for: failed auth, token refresh rate, error patterns
-    - Document emergency debugging procedures (e.g., trace failed auth by user)
-    - Test log visibility during OAuth2 flow (authorize → callback → token use)
-  - **Dependencies**: DEPLOY2 (Cockpit available for functions)
-  - **Complexity**: 1.0 (observability setup)
+    - Change default Cargo feature from `stdio-mcp` to `[]` (no default features)
+    - Keep `stdio-mcp` feature available for local development
+    - Update deploy_scaleway.sh to build with `--no-default-features --features http-mcp`
+    - Verify binary size reduction (measure before/after)
+    - Document feature flags in README for different deployment modes
+  - **Dependencies**: None (refactoring only)
+  - **Complexity**: 0.5 (simple Cargo.toml change)
+
+- [ ] **DEPLOY3**: Deployment failures detected automatically via metadata validation
+  - **Current State**: deploy_scaleway.sh missing OAuth metadata endpoint verification
+  - **Target State**: Deployment script validates OAuth capability immediately after deploy
+  - **Value**: Catches failed deployments before manual testing
+  - **Acceptance Criteria**:
+    - Add curl verification step in deploy_scaleway.sh after deployment
+    - Validate /.well-known/oauth-protected-resource returns HTTP 200
+    - Validate metadata JSON contains required fields (authorization_endpoint, token_endpoint)
+    - Fail deployment script if metadata endpoint unreachable or malformed
+    - Log deployment URL for easy manual verification
+  - **Dependencies**: DEPLOY2 (deployment script exists)
+  - **Complexity**: 0.5 (add verification step to script)
 
 ### Documentation
 

@@ -12,6 +12,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tracing::{info, warn, error};
+use uuid::Uuid;
 
 /// Health check endpoint
 async fn health_check() -> impl IntoResponse {
@@ -82,6 +83,40 @@ async fn mcp_endpoint(
 // ============================================================================
 //
 
+/// Correlation ID for request tracing
+#[derive(Clone)]
+pub struct RequestId(pub String);
+
+/// Correlation ID middleware - adds unique request_id to all requests
+/// This enables tracing requests across the entire lifecycle for debugging
+async fn correlation_id_middleware(
+    mut request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    // Generate unique request ID
+    let request_id = Uuid::new_v4().to_string();
+
+    // Create tracing span with request_id for all subsequent logs
+    let span = tracing::info_span!(
+        "http_request",
+        request_id = %request_id,
+        method = %request.method(),
+        uri = %request.uri(),
+    );
+
+    // Store request_id in extensions for access in handlers
+    request.extensions_mut().insert(RequestId(request_id.clone()));
+
+    // Execute request within the span
+    let _enter = span.enter();
+
+    info!("Request started");
+    let response = next.run(request).await;
+    info!("Request completed");
+
+    response
+}
+
 /// Simplified application state for ADR-002 Resource Server
 /// No OAuth client, no cookie managers - only token validation
 #[derive(Clone)]
@@ -96,11 +131,23 @@ async fn bearer_auth_middleware_adr002(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, Response> {
+    // Extract request_id from extensions for structured logging
+    let request_id = request
+        .extensions()
+        .get::<RequestId>()
+        .map(|rid| rid.0.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
     // Extract Bearer token from Authorization header
     let token = match extract_bearer_token(request.headers()) {
         Ok(token) => token,
         Err(e) => {
-            warn!("Bearer token extraction failed: {}", e);
+            warn!(
+                request_id = %request_id,
+                error = %e,
+                auth_stage = "token_extraction",
+                "Bearer token extraction failed"
+            );
             // Return 401 with WWW-Authenticate header per RFC 6750
             return Ok((
                 StatusCode::UNAUTHORIZED,
@@ -117,7 +164,12 @@ async fn bearer_auth_middleware_adr002(
     let user_info = match state.token_validator.validate_token(&token).await {
         Ok(user_info) => user_info,
         Err(e) => {
-            warn!("Token validation failed: {}", e);
+            warn!(
+                request_id = %request_id,
+                error = %e,
+                auth_stage = "token_validation",
+                "Token validation failed"
+            );
             // Return 401 with WWW-Authenticate header per RFC 6750
             return Ok((
                 StatusCode::UNAUTHORIZED,
@@ -130,7 +182,13 @@ async fn bearer_auth_middleware_adr002(
         }
     };
 
-    info!("Request authenticated for user: {}", user_info.user_id);
+    info!(
+        request_id = %request_id,
+        user_id = %user_info.user_id,
+        team_id = %user_info.team_id,
+        scopes = ?user_info.scopes,
+        "Request authenticated successfully"
+    );
 
     // Store both token and user_info in request extensions for handlers
     request.extensions_mut().insert(Arc::new(token));
@@ -141,6 +199,7 @@ async fn bearer_auth_middleware_adr002(
 
 /// Create HTTP server for ADR-002 Resource Server pattern
 /// Only includes:
+/// - Correlation ID middleware (OBS1)
 /// - OAuth metadata endpoint (AUTH6)
 /// - Bearer token authentication (AUTH7+AUTH8+AUTH9)
 /// - MCP tools (list_boards, get_board)
@@ -162,10 +221,11 @@ pub fn create_app_adr002(token_validator: Arc<TokenValidator>) -> Router {
             bearer_auth_middleware_adr002,
         ));
 
-    // Merge routes
+    // Merge routes and apply correlation ID middleware to ALL requests
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
+        .layer(middleware::from_fn(correlation_id_middleware))
         .with_state(state)
 }
 

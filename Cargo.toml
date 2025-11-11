@@ -5,31 +5,30 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.42", features = ["full"] }
-rmcp = { version = "0.8", features = ["server", "transport-io", "transport-streamable-http-server", "auth", "macros"] }
-oauth2 = "4.4"
-url = "2.5"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 schemars = "1.0"
-ring = "0.17"
-base64 = "0.22"
 thiserror = "2.0"
 anyhow = "1.0"
 dotenvy = "0.15"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-hex = "0.4"
-dirs = "5.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 axum = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
-tower-cookies = { version = "0.10", features = ["signed"] }
-cookie = { version = "0.18", features = ["private", "secure"] }
-uuid = { version = "1.0", features = ["v4"] }
 chrono = "0.4"
-sha2 = "0.10"
 lru = "0.12"
+url = "2.5"
+hex = "0.4"
+dirs = "5.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Dependencies only needed for stdio-mcp feature (OAuth client, token storage)
+rmcp = { version = "0.7", features = ["server", "transport-io", "transport-streamable-http-server", "auth", "macros"], optional = true }
+oauth2 = { version = "4.4", optional = true }
+ring = { version = "0.17", optional = true }
+base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -37,4 +36,21 @@ wiremock = "0.6"
 serial_test = "3.0"
 
 [features]
+stdio-mcp = ["rmcp", "oauth2", "ring", "base64"]
+default = ["stdio-mcp"]
 test-utils = []
+
+[[bin]]
+name = "miro-mcp-server"
+path = "src/main.rs"
+required-features = ["stdio-mcp"]
+
+[[bin]]
+name = "miro-mcp-http"
+path = "src/bin/miro-mcp-http.rs"
+required-features = ["stdio-mcp"]
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+# No required-features - builds without rmcp
