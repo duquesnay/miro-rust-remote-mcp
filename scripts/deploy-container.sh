@@ -15,13 +15,9 @@ echo "🚀 Deploying Miro MCP Server (ADR-002) to Scaleway Containers"
 echo "📌 Image tag: ${IMAGE_TAG}"
 echo ""
 
-# Step 1: Build Docker image (only if IMAGE_TAG is 'latest')
-if [ "$IMAGE_TAG" = "latest" ]; then
-    echo "📦 Building Docker image..."
-    docker build -t ${PROJECT_NAME}:latest .
-else
-    echo "⏭️  Skipping build (using pre-built image from GitHub Container Registry)"
-fi
+# Step 1: Build Docker image
+echo "📦 Building Docker image..."
+docker build -t ${PROJECT_NAME}:${IMAGE_TAG} .
 
 # Step 2: Get Scaleway registry endpoint (use existing container namespace's registry)
 echo ""
@@ -46,16 +42,9 @@ scw registry login region=${REGISTRY_REGION}
 
 # Step 3: Tag and push image
 echo ""
-if [ "$IMAGE_TAG" = "latest" ]; then
-    echo "📤 Pushing image to Scaleway Registry..."
-    docker tag ${PROJECT_NAME}:latest ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
-    docker push ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:latest
-else
-    echo "📤 Pulling and pushing versioned image..."
-    docker pull ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}
-    docker tag ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG} ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}
-    docker push ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}
-fi
+echo "📤 Pushing image to Scaleway Registry..."
+docker tag ${PROJECT_NAME}:${IMAGE_TAG} ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}
+docker push ${REGISTRY_ENDPOINT}/${PROJECT_NAME}:${IMAGE_TAG}
 
 # Step 4: Deploy container
 echo ""
