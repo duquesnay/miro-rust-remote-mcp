@@ -68,12 +68,6 @@ grafana_access() {
     echo ""
     echo "6. Time range: Select last 1h, 6h, or custom"
     echo ""
-
-    # Try to open in browser (macOS)
-    if command -v open &> /dev/null; then
-        echo "Opening Grafana in browser..."
-        open "https://cockpit.fr-par.scw.cloud/grafana"
-    fi
 }
 
 check_config() {
