@@ -645,6 +645,50 @@ TOKEN_ENCRYPTION_KEY=<generated securely>
 
 **This section documents project-specific learnings as they emerge.**
 
+### 2025-11-11 - MCP OAuth Patterns: Resource Server vs Authorization Server
+
+**Context**: During Scaleway deployment investigation, compared our OAuth implementation with vault-server project.
+
+**Finding**: **Two distinct MCP OAuth patterns exist**, and we chose the more complex one unnecessarily:
+
+1. **Authorization Server Pattern** (what we built in ADR-004):
+   - MCP server implements full OAuth flow (`/oauth/authorize`, `/oauth/callback`, `/oauth/token`)
+   - Server handles authorization code exchange with external API (Miro)
+   - Server stores encrypted tokens
+   - Server manages PKCE, state, token refresh
+   - Redirect URI: `https://our-server.com/oauth/callback`
+   - **Complexity**: ~1000 LOC, 3 secrets to manage
+   - **Use case**: When you need OAuth control (rate limiting, custom flows, multi-provider)
+
+2. **Resource Server Pattern** (vault-server approach, simpler):
+   - Claude.ai handles OAuth flow directly with external API
+   - Server only validates tokens passed in `Authorization` headers
+   - No OAuth endpoints needed on server
+   - No token storage needed
+   - Redirect URI: `https://claude.ai/api/mcp/auth_callback`
+   - **Complexity**: ~150 LOC, 0 secrets on server
+   - **Use case**: Standard MCP servers (most cases)
+
+**Key Discovery**: Miro accepts external redirect URIs including Claude's callback URL. The MCP OAuth 2.1 specification (RFC 9728) explicitly supports Resource Server pattern via Protected Resource Metadata.
+
+**Implication**:
+- **85% code reduction** possible by switching patterns
+- **66% fewer secrets** to manage (client_secret stays with Claude)
+- **60-70% faster** to production (0.5-1 day vs 2-3 days remaining)
+- **Simpler maintenance** (token validation only vs full OAuth lifecycle)
+
+**Action**:
+- Created **ADR-005** documenting Resource Server pattern decision
+- Created `feat/resource-server-pattern` worktree for refactor
+- New **REFACTOR-BACKLOG.md** with simplified implementation plan (OAUTH1-3 vs AUTH10-14)
+- Pattern validated: vault-server, multiple other MCP servers use this successfully
+
+**Architectural Lesson**: Always check for simpler patterns before implementing complex solutions. The MCP specification supports multiple OAuth patterns - choose based on actual requirements, not assumptions.
+
+**Reference**: [planning/ADR-005-resource-server-with-claude-oauth.md](planning/ADR-005-resource-server-with-claude-oauth.md)
+
+---
+
 ### [Date] - [Learning Title]
 
 **Context**: [What situation led to this learning]
